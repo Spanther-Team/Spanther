@@ -36,6 +36,8 @@ struct RootView: View {
             case .winkTest: WinkTestView()
             case .rhythm: RhythmView()
             case .pursuit: PursuitView()
+            case .clinic: ClinicView()
+            case .probe: ProbeView()
             }
             if app.showDebug { DebugOverlay().allowsHitTesting(false) }
         }
@@ -50,9 +52,9 @@ struct RootView: View {
         switch app.route {
         case .winkTest:
             Palette.space.ignoresSafeArea()
-        case .calibration, .check, .rhythm, .pursuit, .game:
+        case .calibration, .check, .rhythm, .pursuit, .game, .probe:
             Atlas.paper.ignoresSafeArea()
-        case .menu, .result:
+        case .menu, .result, .clinic:
             ZStack {
                 Atlas.paper
                 LivingBackground(growFrom: app.launchTime)

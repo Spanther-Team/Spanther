@@ -15,6 +15,10 @@ enum Route: Equatable {
     case rhythm
     /// The 60-second warm-up: one target glides across the screen and the eyes follow it.
     case pursuit
+    /// The clinic: «Кто играет?», and behind Face ID the profiles, courses, charts and export.
+    case clinic
+    /// The frozen 90-second probe at the start of a session.
+    case probe
 }
 
 enum ControlMode { case eyes, touch }
@@ -59,6 +63,7 @@ final class AppModel: ObservableObject {
             }
             if route == .game, oldValue != .game { beginMeteorPlay() }
             if oldValue == .pursuit, route != .pursuit { dropPursuit() }
+            if oldValue == .probe, route != .probe { dropProbe() }
             updateAmbient()
         }
     }
@@ -133,6 +138,8 @@ final class AppModel: ObservableObject {
 
     let status = TrackingStatus()
     let tracker = FaceTracker()
+    /// The clinic's children, courses and sessions (GazeCore ClinicStore), and who holds the phone.
+    let clinic = ClinicModel()
     let balance: BalanceConfig
     private(set) var logger = SessionLogger()
 
@@ -209,6 +216,13 @@ final class AppModel: ObservableObject {
             } else if bot == "pursuit" {
                 mode = .eyes
                 route = .pursuit
+            } else if bot == "probe" {
+                // The clinic's flow for the Simulator: a made-up child with a course, then the probe played by the bot.
+                mode = .eyes
+                #if DEBUG
+                if let id = clinic.makeBotChild() { pick(child: id) }
+                #endif
+                route = .probe
             } else {
                 mode = bot == "eyes" ? .eyes : .touch
                 route = .game
@@ -227,6 +241,20 @@ final class AppModel: ObservableObject {
             self?.status.tracking = info
             self?.logTracking()
         }
+        // The plays an older build kept in sessions.json become the clinic's first children, once.
+        #if DEBUG
+        if demoReport == nil, autoplay == nil { clinic.migrate(sessions) }
+        #else
+        clinic.migrate(sessions)
+        #endif
+        // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree.
+        if let c = clinic.playing { childCode = c.child.code }
+    }
+
+    /// The child picked on «Кто играет?»: the plays from now on are saved under their code.
+    func pick(child id: UUID) {
+        clinic.playingID = id
+        if let c = clinic.record(id) { childCode = c.child.code }
     }
 
     /// Writes the camera format and device state into the current session CSV.
@@ -253,8 +281,9 @@ final class AppModel: ObservableObject {
         self.active = active
         applyBrightness()
         updateAmbient()
-        // A warm-up that was interrupted is not a minute of following: it ends without a result.
+        // A warm-up that was interrupted is not a minute of following: it ends without a result. Nor is a probe.
         if !active, route == .pursuit { route = .menu }
+        if !active, route == .probe, probe?.phase != .done { route = .clinic }
         guard var p = meteorPlay else { return }
         let now = CACurrentMediaTime()
         if active {
@@ -375,6 +404,22 @@ final class AppModel: ObservableObject {
         if route == .winkTest, let f = s.features {
             logger.sample(kind: "wink_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
                           blink: s.blink, hold: false, processingMs: s.processingMs, light: s.light)
+        }
+        if let f = s.features {
+            // The eyes' distance to the screen (cm), smoothed: the probe lays its field out at it.
+            let d = f.distance * 100
+            faceDistanceCm = faceDistanceCm.map { $0 + (d - $0) * 0.1 } ?? d
+        }
+        if route == .probe, let p = probe, p.phase == .running {
+            // Every tracked frame of the probe, with the target it shows, into the session's CSV.
+            let host = s.timestamp
+            p.sample(host: host, gaze: gazePoint, distanceCm: s.features.map { $0.distance * 100 }, fps: s.fps, light: s.light)
+            if let f = s.features {
+                let t = p.time(host: host)
+                let target = p.gliderPosition(host: host) ?? p.plan.scheduledTarget(at: t).map { p.targetPosition($0.index) }
+                logger.sample(kind: "probe_frame", time: host, target: target, gaze: gazePoint, f: f, blink: s.blink,
+                              hold: blink.freezeGaze, processingMs: s.processingMs, light: s.light)
+            }
         }
         if route == .pursuit, mode == .eyes, let p = pursuit, p.phase == .running {
             // Every tracked frame of the warm-up: the distance from the gaze to the target (screen pt). A frame
@@ -766,6 +811,118 @@ final class AppModel: ObservableObject {
         }
     }
     #endif
+
+    // MARK: probe
+
+    /// The probe in progress (made by its screen, which knows its size).
+    @Published private(set) var probe: ProbeSession?
+    /// The last probe's outcome, for its summary card: the session as recorded and why it stays off the chart.
+    @Published private(set) var probeOutcome: (session: Session, issues: [ProbeQuality.Issue])?
+    @Published private(set) var probePreparing = false
+    private var probeTimer: Timer?
+    /// The eyes' distance to the screen (cm), smoothed over the last frames; nil before the first face.
+    private(set) var faceDistanceCm: Double?
+
+    /// Starts a session's probe for the child picked on «Кто играет?», calibrating first when there is no
+    /// calibration yet. The probe is by eye only: it measures the gaze.
+    func openProbe() {
+        guard clinic.playing != nil, eyeTrackingSupported || autoplay == "probe" else { return }
+        mode = .eyes
+        probeOutcome = nil
+        if model == nil, autoplay != "probe" {
+            beginCalibration(then: .probe)
+            return
+        }
+        route = .probe
+    }
+
+    /// The probe screen is up on a screen this size (pt): the form is drawn from a fresh seed off the main thread
+    /// (one whose zone order this child has not seen), laid out at the eyes' distance, and the probe starts.
+    func beginProbe(screen: Vec2) {
+        guard route == .probe, probe == nil, !probePreparing else { return }
+        guard let child = clinic.playing else {
+            route = .clinic
+            return
+        }
+        probePreparing = true
+        let rules = child.openCourse.flatMap { ProbeProtocol.version($0.probeVersion) } ?? .latest
+        let past = child.sessions + child.voided
+        let seed = UInt64.random(in: 0...ProbePlan.seedMask)
+        let mapping = FieldMapping(size: screen, ptPerCm: ptPerCm, distanceCm: faceDistanceCm ?? 30,
+                                   fieldHalfWidthDeg: rules.fieldHalfWidthDeg, fieldHalfHeightDeg: rules.fieldHalfHeightDeg)
+        let radius = rules.hitRadiusDeg(calibrationErrorDeg: report?.meanErrorDeg)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let plan = ProbePlan.fresh(from: seed, avoiding: ClinicModel.signatures(of: past), rules: rules)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.probePreparing = false
+                guard self.route == .probe, let plan else {
+                    if self.route == .probe { self.route = .clinic }
+                    return
+                }
+                let p = ProbeSession(plan: plan, mapping: mapping, radiusDeg: radius, childID: child.id,
+                                     now: CACurrentMediaTime())
+                self.probe = p
+                self.logger.event(kind: "probe_start", time: p.startHost)
+                self.probeTimer?.invalidate()
+                let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.probeTick() }
+                RunLoop.main.add(t, forMode: .common)
+                self.probeTimer = t
+            }
+        }
+    }
+
+    private func probeTick() {
+        guard let p = probe, route == .probe else {
+            probeTimer?.invalidate()
+            probeTimer = nil
+            return
+        }
+        let now = CACurrentMediaTime()
+        #if DEBUG
+        if autoplay == "probe" {
+            // The Simulator has no face: the bot looks at what the probe shows, a reaction late, and samples itself.
+            let t = p.time(host: now - 0.3)
+            botAim = p.gliderPosition(host: now - 0.12) ?? p.plan.scheduledTarget(at: t).map { p.targetPosition($0.index) }
+            p.sample(host: now, gaze: botAim, distanceCm: 32, fps: 60, light: 800)
+        }
+        #endif
+        guard p.tick(host: now) else { return }
+        finishProbe(p)
+    }
+
+    /// The probe has run its time: the quality gate, the result, and the session written to the child's log with the
+    /// raw CSV next to it. A session that fails the gate is kept, marked, and left off the trend.
+    private func finishProbe(_ p: ProbeSession) {
+        probeTimer?.invalidate()
+        probeTimer = nil
+        let record = clinic.record(p.childID)
+        let year = Calendar.current.component(.year, from: Date())
+        let adult = record?.child.birthYear.map { year - $0 >= 18 } ?? false
+        let conditions = p.conditions(calibrationErrorCm: report?.meanErrorCm, night: nightVision)
+        let metrics = p.run.metrics()
+        let issues = ProbeQuality.issues(conditions: conditions, metrics: metrics, completed: p.run.finished,
+                                         maxErrorCm: adult ? 1.0 : 1.5)
+        let result = p.run.result(qualityPassed: issues.isEmpty)
+        let course = record?.openCourse
+        let number = course.flatMap { c in record?.nextNumber(in: c.id) }
+        let session = Session(courseID: course?.id, number: number, start: p.start, durationSec: p.plan.rules.durationSec,
+                              place: course?.runsAt ?? .clinic, conditions: conditions, probe: result)
+        logger.event(kind: "probe_end", time: CACurrentMediaTime())
+        clinic.recordSession(session, child: p.childID, csv: logger.url)
+        probeOutcome = (session, issues)
+        #if DEBUG
+        botAim = nil
+        #endif
+    }
+
+    /// The probe screen closed: an unfinished probe leaves no session.
+    private func dropProbe() {
+        probeTimer?.invalidate()
+        probeTimer = nil
+        probe = nil
+        probePreparing = false
+    }
 
     // MARK: calibration
 

@@ -418,6 +418,41 @@ jobs:
           PY
           then pass "warm-up: $(tail -n 1 "$OUT/pursuit.check.txt")"; else fail "warm-up: $(tail -n 1 "$OUT/pursuit.check.txt")"; fi
 
+          # The clinic's probe (-SpantherAutoplay probe): a made-up child «CI-1» with a course, the frozen 90 s probe
+          # played by the bot, and then the session in the child's log (Application Support/clinic/<id>/log.jsonl)
+          # with its number, its numbers and the raw CSV stored next to it.
+          xcrun simctl terminate "$UDID" "$BID" || true
+          xcrun simctl launch --stdout="$OUT/probe.stdout.log" --stderr="$OUT/probe.stderr.log" "$UDID" "$BID" -SpantherAutoplay probe
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BID" data 2>/dev/null) || true
+          for i in $(seq -w 1 14); do
+            sleep 10; shot "probe-$i"
+            LOG=$(ls -t "$DATA"/Library/"Application Support"/clinic/*/log.jsonl 2>/dev/null | head -n 1) || true
+            if [ -n "$LOG" ] && grep -q sessionRecorded "$LOG"; then break; fi
+          done
+          sleep 3; shot probe-done
+          if running; then pass "probe: app running after the probe"; else fail "probe: app not running after the probe"; fi
+          LOG=$(ls -t "$DATA"/Library/"Application Support"/clinic/*/log.jsonl 2>/dev/null | head -n 1) || true
+          if [ -n "$LOG" ]; then cp "$LOG" "$OUT/clinic-log.jsonl"; ls "$(dirname "$LOG")" > "$OUT/clinic-files.txt"; fi
+          if python3 - "$OUT/clinic-log.jsonl" > "$OUT/probe.check.txt" 2>&1 <<'PY'
+          import json, sys
+          events = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+          kinds = [next(iter(e["change"])) for e in events]
+          sessions = [e["change"]["sessionRecorded"]["session"] for e in events if "sessionRecorded" in e["change"]]
+          s = sessions[-1] if sessions else {}
+          p = s.get("probe") or {}
+          m = p.get("metrics", {})
+          print(f"{kinds.count('childCreated')} child, {kinds.count('courseStarted')} course, {len(sessions)} session:"
+                f" number {s.get('number')}, completed {p.get('completed')}, hold {m.get('holdShare', -1):.2f},"
+                f" first look {m.get('firstLookMs', -1):.0f} ms, pursuit {m.get('pursuitOnShare', -1):.2f},"
+                f" csv {s.get('csvFile')}")
+          ok = (kinds.count("childCreated") == 1 and kinds.count("courseStarted") == 1 and len(sessions) >= 1
+                and s.get("number") == 1 and p.get("completed") is True and m.get("holdShare", 0) > 0.5
+                and bool(s.get("csvFile")))
+          sys.exit(0 if ok else 1)
+          PY
+          then pass "probe: $(tail -n 1 "$OUT/probe.check.txt")"; else fail "probe: $(tail -n 1 "$OUT/probe.check.txt")"; fi
+          xcrun simctl terminate "$UDID" "$BID" || true
+
           # The report screens with made-up plays (-SpantherDemoReport): the summary after a meteor play, a
           # child's history, and the settings sheet.
           for page in summary history settings; do
