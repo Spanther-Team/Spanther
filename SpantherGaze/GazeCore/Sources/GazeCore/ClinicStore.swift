@@ -2,7 +2,7 @@ import Foundation
 
 /// The clinic's logs on the phone: Application Support/clinic/<child id>/log.jsonl, one JSON event per line, only
 /// ever appended and flushed to disk at once. Written when a session ends or a profile changes, never during play.
-/// The logs leave the phone only through the export buttons (CLAUDE.md rule 5).
+/// The logs leave the phone only through the export buttons.
 public final class ClinicStore {
     public enum StoreError: Error, Equatable {
         case emptyCode

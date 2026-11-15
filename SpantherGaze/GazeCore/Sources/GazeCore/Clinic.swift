@@ -3,7 +3,7 @@ import Foundation
 // The clinic's records: children known by a code, their courses of 25 to 30 sessions, and each session's probe and
 // plays. Nothing is rewritten: every child has an append-only log of events (ClinicStore), and the state the screens
 // show is folded from it, so every number on a chart traces back to the line that recorded it. No face data and no
-// names (CLAUDE.md rule 5): a child is a code and an emblem.
+// names are kept: a child is a code and an emblem.
 
 /// Who made a change: the clinician (unlocked by Face ID or the passcode) or a parent (by the parent PIN).
 public enum Role: String, Codable, Sendable { case clinician, parent }
@@ -120,17 +120,21 @@ public struct ProbeResult: Codable, Sendable, Equatable {
     public var qualityPassed: Bool
     /// The probe ran to its end.
     public var completed: Bool
-    /// The probe's numbers by name. Names a newer build adds are kept as they are.
+    /// The probe's numbers by name (ProbeMetric). Names a newer build adds are kept as they are.
     public var metrics: [String: Double]
+    /// The form's fingerprint (ProbePlan.fingerprint): a later build that rebuilds the form from the seed can
+    /// check it got the same one.
+    public var fingerprint: UInt64?
 
     public init(version: Int, generatorVersion: Int, seed: UInt64, qualityPassed: Bool, completed: Bool,
-                metrics: [String: Double]) {
+                metrics: [String: Double], fingerprint: UInt64? = nil) {
         self.version = version
         self.generatorVersion = generatorVersion
         self.seed = seed
         self.qualityPassed = qualityPassed
         self.completed = completed
         self.metrics = metrics.filter { $0.value.isFinite }
+        self.fingerprint = fingerprint
     }
 }
 
