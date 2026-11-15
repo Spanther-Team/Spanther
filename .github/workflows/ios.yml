@@ -250,6 +250,13 @@ jobs:
               else
                 fail "music: the game closed without writing ambient.txt"
               fi
+              # The pops: how many locks the stones' sound engine played. Without a sound device it cannot start
+              # either; that is noted, not failed.
+              if grep -qE "pops on, [0-9]+ Hz, [1-9][0-9]* locks" "$OUT/ambient.txt" 2>/dev/null; then
+                pass "pops: $(grep -o 'pops .*' "$OUT/ambient.txt")"
+              else
+                echo "NOTE pops: $(grep -o 'pops .*' "$OUT/ambient.txt" 2>/dev/null || echo 'no line')" >> "$OUT/checks.txt"
+              fi
             fi
             xcrun simctl terminate "$UDID" "$BID" || true
           done

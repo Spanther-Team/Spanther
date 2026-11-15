@@ -71,8 +71,17 @@ final class GameScene: SKScene {
     private var reticleStarved = false
     private var touchPoint: Vec2?
     private var lastTime: TimeInterval = 0
-    private let boomHaptic = UIImpactFeedbackGenerator(style: .medium)
     private let hitHaptic = UINotificationFeedbackGenerator()
+    /// The pop of a broken stone: its sound and its touch (AppModel's, so the bank is made once per launch).
+    var pops: PopPlayer?
+    var haptics: FeelHaptics?
+    /// Broken stones still in flight.
+    private var bursts: [ShardBurst] = []
+    /// The stone whose hold is humming in the hand.
+    private var chargingID: Int?
+    /// The screen's px per pt for the stones' pictures; a new set of shapes each play.
+    private var pixelScale: CGFloat = 2
+    private var stoneSalt = UInt64.random(in: 0...UInt64.max)
     private var tapBurst = BurstCounter(count: 3, windowSec: 2)
 
     #if DEBUG
@@ -90,13 +99,26 @@ final class GameScene: SKScene {
         // The paper and the garden behind are SwiftUI's (RootView); the scene draws only the game over them.
         backgroundColor = .clear
         view.allowsTransparency = true
+        pixelScale = min(3, max(1, view.contentScaleFactor))
+        pops?.setActive(true)
+        haptics?.setActive(true)
         // SpriteView may present the scene again when SwiftUI rebuilds the view; keep the running game.
         guard world.parent == nil else { return }
         addChild(world)
         start()
     }
 
+    override func willMove(from view: SKView) {
+        pops?.setActive(false)
+        haptics?.setActive(false)
+        chargingID = nil
+    }
+
     func start() {
+        bursts.forEach { $0.cancel() }
+        bursts.removeAll()
+        chargingID = nil
+        stoneSalt = UInt64.random(in: 0...UInt64.max)
         world.removeAllChildren()
         rocks.removeAll()
         signs.removeAll()
@@ -168,6 +190,21 @@ final class GameScene: SKScene {
             hud.reloadNeeded = useTouch ? e.touchReloadTaps : e.reloadBlinks
         }
         _ = blinkReload()   // drop a reload blinked on the menu
+        haptics?.prepare(config.classes.mapValues { FeelHaptics.Kind(holdSec: $0.dwellSec, strength: 0.6 + 0.4 * sizeShare($0.sizePt)) })
+    }
+
+    /// Where a class's size falls between the smallest and the largest (0...1): the pop is lower and the touch
+    /// heavier for a large stone.
+    private func sizeShare(_ sizePt: Double) -> Double {
+        let sizes = config.classes.values.map(\.sizePt)
+        guard let lo = sizes.min(), let hi = sizes.max(), hi > lo else { return 0.5 }
+        return min(1, max(0, (sizePt - lo) / (hi - lo)))
+    }
+
+    /// Where the score sits on the screen (the first pill of GameView's top row), for the motes to fly to.
+    private var scoreAt: CGPoint {
+        let inset = view?.safeAreaInsets ?? .zero
+        return CGPoint(x: inset.left + 44, y: size.height - inset.top - 28)
     }
 
     /// Touch mode: one tap on the energy bar. Three inside the window reload.
@@ -199,6 +236,10 @@ final class GameScene: SKScene {
         let dt = lastTime == 0 ? 0 : currentTime - lastTime
         lastTime = currentTime
         let reloadBlinked = blinkReload()
+        if paused_, chargingID != nil {
+            haptics?.stopCharge()
+            chargingID = nil
+        }
         guard let m = model, !paused_ else { return }
         var botGaze: GazeInput?
         #if DEBUG
@@ -219,7 +260,8 @@ final class GameScene: SKScene {
         for e in m.update(dt: dt, gaze: gaze, held: held) {
             switch e {
             case .spawned(let a):
-                let n = RockNode(a, scale: CGFloat(m.targetScale))
+                let n = RockNode(a, scale: CGFloat(m.targetScale), seed: stoneSalt ^ (UInt64(bitPattern: Int64(a.id)) &* 0x9E37_79B9_7F4A_7C15),
+                                 pixelScale: pixelScale)
                 rocks[a.id] = n
                 world.addChild(n)
             case .decoySpawned(let s):
@@ -241,8 +283,21 @@ final class GameScene: SKScene {
                 hud.decoys += 1
                 onDecoy?(rec, s.position)
             case .destroyed(let a, let rec):
-                explode(at: sk(a.position), radius: CGFloat(a.radius))
-                rocks.removeValue(forKey: a.id)?.removeFromParent()
+                let p = sk(a.position)
+                let rock = rocks.removeValue(forKey: a.id)
+                let share = sizeShare(config.classes[a.className]?.sizePt ?? 0)
+                if let burst = rock?.shatter(in: world, floorY: sk(Vec2(a.position.x, m.earthSurfaceY(atX: a.position.x))).y,
+                                             seed: stoneSalt ^ UInt64(bitPattern: Int64(a.id)), speed: 150 + 2 * a.radius,
+                                             moteCount: 3 + Int((share * 3).rounded()), scoreAt: scoreAt) {
+                    bursts.append(burst)
+                    ripple(at: p, radius: CGFloat(a.radius))
+                } else {
+                    explode(at: p, radius: CGFloat(a.radius))
+                }
+                rock?.removeFromParent()
+                pops?.lock(size: share, pan: Double(p.x / max(1, size.width)) * 2 - 1)
+                haptics?.lock(kind: a.className)
+                if chargingID == a.id { chargingID = nil }
                 hud.score = m.score
                 onRecord?(rec)
             case .energySpent(_, let left):
@@ -252,6 +307,8 @@ final class GameScene: SKScene {
                 break
             case .hitEarth(let a, let rec):
                 impact(at: sk(a.position), radius: CGFloat(a.radius))
+                // The row of locks is broken: the chimes start again from the bottom.
+                pops?.breakRow()
                 rocks.removeValue(forKey: a.id)?.removeFromParent()
                 hud.shields = max(0, m.shields)
                 onRecord?(rec)
@@ -272,7 +329,21 @@ final class GameScene: SKScene {
             }
         }
 
-        for a in m.asteroids { rocks[a.id]?.sync(a, at: sk(a.position)) }
+        var gazeAt: CGPoint?
+        if case .point(let g) = gaze { gazeAt = sk(g) }
+        for a in m.asteroids { rocks[a.id]?.sync(a, at: sk(a.position), gaze: gazeAt, dt: dt) }
+        for b in bursts { b.step(dt) }
+        bursts.removeAll { $0.isOver }
+        // The hum in the hand follows the stone being held, from where its hold is.
+        let holding = m.asteroids.first { $0.isTargeted && !$0.isStarved && $0.progress < 1 }
+        if holding?.id != chargingID {
+            if let a = holding {
+                haptics?.startCharge(kind: a.className, progress: a.progress, dwellSec: a.dwellSec)
+            } else {
+                haptics?.stopCharge()
+            }
+            chargingID = holding?.id
+        }
         for s in m.decoys { signs[s.id]?.position = sk(s.position) }
         if !useTouch, botGaze == nil { onLookedAt?(m.asteroids.first { $0.isTargeted }?.position) }
         if hud.needsReload != m.needsReload { hud.needsReload = m.needsReload }
@@ -354,7 +425,6 @@ final class GameScene: SKScene {
     /// A burnt meteor bursts like a star on the chart: an ink ring and a vermilion one, and small four-pointed
     /// stars thrown out.
     private func explode(at p: CGPoint, radius: CGFloat) {
-        boomHaptic.impactOccurred()
         for (k, color) in [Atlas.UI.vermilion, Atlas.UI.ink].enumerated() {
             let ring = SKShapeNode(circleOfRadius: radius)
             ring.position = p
@@ -375,6 +445,17 @@ final class GameScene: SKScene {
                                      .rotate(byAngle: CGFloat.random(in: -2...2), duration: 0.7),
                                      .fadeOut(withDuration: 0.7)]), .removeFromParent()]))
         }
+    }
+
+    /// With the shards: one thin vermilion ring that opens and fades, the pop's outline.
+    private func ripple(at p: CGPoint, radius: CGFloat) {
+        let ring = SKShapeNode(circleOfRadius: radius)
+        ring.position = p
+        ring.strokeColor = Atlas.UI.vermilion.withAlphaComponent(0.6)
+        ring.lineWidth = 1.5
+        ring.zPosition = 11
+        world.addChild(ring)
+        ring.run(.sequence([.group([.scale(to: 1.9, duration: 0.35), .fadeOut(withDuration: 0.35)]), .removeFromParent()]))
     }
 
     /// The atlas's four-pointed star (Atlas.star) as a CGPath around the origin.
@@ -419,44 +500,49 @@ final class GameScene: SKScene {
     }
 }
 
-/// One meteor in the atlas look: an ink-outlined rock with engraved hatching that warms to vermilion as it burns,
-/// a dial round it like a rhythm note's (a faint full circle, the ink arc of the burn, a vermilion mark at the
-/// top), and a warm light under it while it is looked at, which stands in for the hidden aim. Cracks of paper show
-/// from half way. Looked at without energy: a dashed vermilion ring that says "reload first".
+/// One meteor in the atlas look: a faceted sky-stone (Feel's SkyStone, painted by StoneBaker) that heats to
+/// vermilion as it burns, a dial round it like a rhythm note's (a faint full circle, the ink arc of the burn, a
+/// vermilion mark at the top), and a warm light under it while it is looked at, which stands in for the hidden aim.
+/// The first look breaks it up where the gaze rests (StoneFracture); the cracks then grow out from that point as the
+/// hold fills, and at the lock the very pieces they outline fly apart (shatter). It swells a little as it fills and
+/// leans toward the eyes, on springs. Looked at without energy: a dashed vermilion ring that says "reload first".
 final class RockNode: SKNode {
-    private let body: SKShapeNode
-    private let hatch = SKShapeNode()
+    /// The stone, turned with the meteor: the cool picture, the hot one over it, the cracks over both.
+    private let body = SKNode()
+    private let cool = SKSpriteNode()
+    private let hot = SKSpriteNode()
+    private var cracks: SKSpriteNode?
     private let ring = SKShapeNode()
     private let track: SKShapeNode
     private let starvedRing: SKShapeNode
     private let mark = SKShapeNode()
     private let lamp: SKShapeNode
-    private let cracks = SKShapeNode()
     private let radius: CGFloat
     /// How far the dial sits outside the rock (pt).
     private let dialGap: CGFloat
-
-    private static let paperRGB: (CGFloat, CGFloat, CGFloat) = (0.906, 0.875, 0.820)
-    private static let hotRGB: (CGFloat, CGFloat, CGFloat) = (0.761, 0.271, 0.176)
+    private let stone: SkyStone
+    private let seed: UInt64
+    private let pixelScale: CGFloat
+    /// The stone's pictures once painted, for the fracture's bake; used on StoneBaker.queue only.
+    private final class Baked { var art: StoneBaker.Art? }
+    private let baked = Baked()
+    private var broken: StoneBaker.Broken?
+    private var breaking = false
+    private var lastHeat: CGFloat = -1
+    private var swell = FeelSpring(value: 1, frequencyHz: 5, dampingRatio: 0.45)
+    private var leanX = FeelSpring(frequencyHz: 3.5, dampingRatio: 0.75)
+    private var leanY = FeelSpring(frequencyHz: 3.5, dampingRatio: 0.75)
 
     /// `scale`: «Мелкие цели». The rock's radius already has it; the dial, the mark and the light round it shrink
-    /// by it too, so the whole meteor is that much smaller, not only its body.
-    init(_ a: Asteroid, scale k: CGFloat = 1) {
+    /// by it too, so the whole meteor is that much smaller, not only its body. `seed` picks the stone's shape and
+    /// how it breaks; `pixelScale` is the screen's px per pt for its pictures.
+    init(_ a: Asteroid, scale k: CGFloat = 1, seed: UInt64, pixelScale: CGFloat) {
         let radius = CGFloat(a.radius)
         self.radius = radius
+        self.seed = seed
+        self.pixelScale = pixelScale
+        stone = SkyStone.make(seed: seed)
         dialGap = 10 * k
-        let path = CGMutablePath()
-        let n = 11
-        for i in 0..<n {
-            let ang = CGFloat(i) / CGFloat(n) * 2 * .pi
-            let k = CGFloat.random(in: 0.84...1.04)
-            let pt = CGPoint(x: cos(ang) * radius * k, y: sin(ang) * radius * k)
-            if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
-        }
-        path.closeSubpath()
-        body = SKShapeNode(path: path)
-        body.strokeColor = Atlas.UI.ink.withAlphaComponent(0.9)
-        body.lineWidth = 1.6
         let dial = radius + 10 * k
         track = SKShapeNode(circleOfRadius: dial)
         starvedRing = SKShapeNode(path: CGPath(ellipseIn: CGRect(x: -dial, y: -dial, width: 2 * dial, height: 2 * dial),
@@ -484,29 +570,11 @@ final class RockNode: SKNode {
         mark.lineWidth = 3
         mark.lineCap = .round
         mark.isHidden = true
-        // Engraved hatching: short parallel strokes on one side of the rock.
-        let hp = CGMutablePath()
-        for i in 0..<4 {
-            let x = -radius * 0.5 + CGFloat(i) * radius * 0.22
-            hp.move(to: CGPoint(x: x, y: -radius * 0.45))
-            hp.addLine(to: CGPoint(x: x + radius * 0.18, y: -radius * 0.1))
-        }
-        hatch.path = hp
-        hatch.strokeColor = Atlas.UI.ink.withAlphaComponent(0.35)
-        hatch.lineWidth = 0.8
-        body.addChild(hatch)
-        let cp = CGMutablePath()
-        for i in 0..<4 {
-            let ang = CGFloat(i) * 1.6 + 0.4
-            cp.move(to: .zero)
-            cp.addLine(to: CGPoint(x: cos(ang) * radius * 0.5, y: sin(ang) * radius * 0.5))
-            cp.addLine(to: CGPoint(x: cos(ang + 0.4) * radius * 0.85, y: sin(ang + 0.4) * radius * 0.85))
-        }
-        cracks.path = cp
-        cracks.strokeColor = Atlas.UI.paper
-        cracks.lineWidth = max(1.5, radius * 0.05)
-        cracks.alpha = 0
-        body.addChild(cracks)
+        // Hidden until its pictures are painted: a sprite without a texture would draw a plain square.
+        body.isHidden = true
+        hot.alpha = 0
+        body.addChild(cool)
+        body.addChild(hot)
         addChild(lamp)
         addChild(body)
         addChild(track)
@@ -514,24 +582,89 @@ final class RockNode: SKNode {
         addChild(ring)
         addChild(mark)
         zPosition = 10
+        bake()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    private var lastHeat: CGFloat = -1
+    /// Paints the stone off the main thread. Meteors come in above the top edge, so it is ready before it shows.
+    private func bake() {
+        let stone = stone, radius = radius, scale = pixelScale, baked = baked
+        StoneBaker.queue.async { [weak self] in
+            guard let art = StoneBaker.art(stone, radius: radius, scale: scale) else { return }
+            baked.art = art
+            DispatchQueue.main.async { self?.show(art) }
+        }
+    }
 
-    func sync(_ a: Asteroid, at p: CGPoint) {
+    private func show(_ art: StoneBaker.Art) {
+        let size = CGSize(width: art.side, height: art.side)
+        cool.texture = art.cool
+        cool.size = size
+        hot.texture = art.hot
+        hot.size = size
+        body.isHidden = false
+    }
+
+    /// The first look: works out the fracture for an impact at `gaze` (scene point), in the stone's own frame, and
+    /// paints its cracks and shards off the main thread. On the same queue as the stone's own picture, so that is
+    /// there first.
+    private func breakUp(at gaze: CGPoint) {
+        breaking = true
+        let dx = Double(gaze.x - position.x), dy = Double(gaze.y - position.y)
+        let turn = -Double(body.zRotation), r = Double(max(1, radius))
+        let impact = FeelPoint((dx * cos(turn) - dy * sin(turn)) / r, (dx * sin(turn) + dy * cos(turn)) / r)
+        let stone = stone, radius = radius, scale = pixelScale, seed = seed, baked = baked
+        StoneBaker.queue.async { [weak self] in
+            guard let art = baked.art,
+                  let broken = StoneBaker.broken(stone, art: art, impact: impact, radius: radius, scale: scale, seed: seed)
+            else { return }
+            DispatchQueue.main.async { self?.show(broken) }
+        }
+    }
+
+    private func show(_ broken: StoneBaker.Broken) {
+        self.broken = broken
+        let side = StoneBaker.side(radius: radius)
+        let c = SKSpriteNode(texture: broken.cracks, size: CGSize(width: side, height: side))
+        c.shader = StoneBaker.crackShader
+        let t = Float(max(0, lastHeat))
+        c.setValue(SKAttributeValue(float: t), forAttribute: "a_progress")
+        c.setValue(SKAttributeValue(float: t), forAttribute: "a_heat")
+        body.addChild(c)
+        cracks = c
+    }
+
+    /// `gaze`: where the eyes (or the finger) are on this frame, scene point, if anywhere.
+    func sync(_ a: Asteroid, at p: CGPoint, gaze: CGPoint?, dt: Double) {
         position = p
         starvedRing.isHidden = !a.isStarved
         body.zRotation = CGFloat(a.rotation)
-        let t = CGFloat(min(1, a.progress))
-        // The fill warms from the paper's shade to vermilion; recoloured only when it changes visibly.
-        if abs(t - lastHeat) > 0.02 {
+        let t = CGFloat(min(1, max(0, a.progress)))
+        if !breaking, a.isTargeted || t > 0 { breakUp(at: gaze ?? p) }
+        // The hot picture fades in and the cracks grow with the hold; the shader's numbers change only when it does.
+        if abs(t - lastHeat) > 0.004 || (t == 0 && lastHeat != 0) {
             lastHeat = t
-            let (r0, g0, b0) = Self.paperRGB, (r1, g1, b1) = Self.hotRGB
-            body.fillColor = UIColor(red: r0 + (r1 - r0) * t, green: g0 + (g1 - g0) * t, blue: b0 + (b1 - b0) * t, alpha: 1)
+            hot.alpha = t
+            cracks?.setValue(SKAttributeValue(float: Float(t)), forAttribute: "a_progress")
+            cracks?.setValue(SKAttributeValue(float: Float(t)), forAttribute: "a_heat")
         }
-        cracks.alpha = t < 0.5 ? 0 : (t - 0.5) * 2
+        swell.target = 1 + 0.06 * Double(t)
+        var lean = (x: 0.0, y: 0.0)
+        if a.isTargeted, let g = gaze {
+            let dx = Double(g.x - p.x), dy = Double(g.y - p.y), l = (dx * dx + dy * dy).squareRoot()
+            if l > 1 {
+                let push = 0.05 * Double(radius) * min(1, l / Double(radius)) / l
+                lean = (dx * push, dy * push)
+            }
+        }
+        leanX.target = lean.x
+        leanY.target = lean.y
+        swell.step(dt)
+        leanX.step(dt)
+        leanY.step(dt)
+        body.setScale(CGFloat(swell.value))
+        body.position = CGPoint(x: leanX.value, y: leanY.value)
         let looked = a.isTargeted || t > 0
         lamp.isHidden = !a.isTargeted
         track.isHidden = !looked
@@ -541,11 +674,26 @@ final class RockNode: SKNode {
             let path = CGMutablePath()
             path.addArc(center: .zero, radius: radius + dialGap, startAngle: .pi / 2, endAngle: .pi / 2 - t * 2 * .pi, clockwise: true)
             ring.path = path
-            if t > 0.3 { body.position = CGPoint(x: CGFloat.random(in: -1...1) * t * 2, y: CGFloat.random(in: -1...1) * t * 2) }
         } else {
             ring.path = nil
-            body.position = .zero
         }
+    }
+
+    /// The lock: the shards fly from where they are on the screen and `moteCount` motes of light curve off to
+    /// `scoreAt`, all in `world`'s coordinates. Nil if the stone was never broken up (its bake had not finished),
+    /// so the scene draws its plain burst instead.
+    func shatter(in world: SKNode, floorY: CGFloat, seed: UInt64, speed: Double, moteCount: Int,
+                 scoreAt: CGPoint) -> ShardBurst? {
+        guard let broken, parent != nil else { return nil }
+        let c = convert(body.position, to: world)
+        let centre = FeelPoint(Double(c.x), Double(c.y))
+        let k = body.xScale
+        let flight = ShardFlight.burst(broken.fracture, centre: centre, rotation: Double(body.zRotation),
+                                       scale: Double(radius * k), floorY: Double(floorY), seed: seed, speed: speed)
+        let motes = MotePath.spray(from: centre, to: FeelPoint(Double(scoreAt.x), Double(scoreAt.y)),
+                                   count: moteCount, seed: seed)
+        return ShardBurst(flight: flight, textures: broken.shards, sides: broken.shardSides, scale: k, motes: motes,
+                          in: world)
     }
 }
 

@@ -168,6 +168,44 @@ final class PopSynthTests: XCTestCase {
         XCTAssertEqual(a.cracks.count, 1)
     }
 
+    func testALockMixesTheFourLayersAtTheirOffsets() {
+        let bank = PopBank.make(sampleRate: fs, seed: 5)
+        let o = bank.lockOffsets
+        XCTAssertEqual(o.crumble, Int(PopMix.crumbleDelaySec * fs))
+        XCTAssertEqual(o.chime, Int(PopMix.chimeDelaySec * fs))
+        var out = [Float](repeating: 7, count: bank.lockCapacity + 100)
+        let n = out.withUnsafeMutableBufferPointer { bank.renderLock(variant: 14, step: 3, gain: 0.5, into: $0) }
+        // The chime is the longest layer, so it sets the length.
+        XCTAssertEqual(n, o.chime + bank.chimes[3].count)
+        XCTAssertLessThanOrEqual(n, bank.lockCapacity)
+        var expected = [Float](repeating: 0, count: n)
+        for (layer, at) in [(bank.cracks[2], 0), (bank.pops[2], 0), (bank.crumbles[2], o.crumble), (bank.chimes[3], o.chime)] {
+            for i in layer.indices { expected[at + i] += layer[i] * 0.5 }
+        }
+        XCTAssertEqual(Array(out[0..<n]), expected)
+        XCTAssertTrue(out[n...].allSatisfy { $0 == 7 })
+        // Full gain stays below the sum of the layers' peaks, well under clipping.
+        let full = [Float](unsafeUninitializedCapacity: bank.lockCapacity) { buf, count in
+            count = bank.renderLock(variant: 0, step: 99, into: buf)
+        }
+        let ceiling = [PopMix.crackDB, PopMix.popDB, PopMix.chimeDB, PopMix.crumbleDB].reduce(0) { $0 + PopMix.gain($1) }
+        XCTAssertLessThanOrEqual(peak(full), ceiling + 1e-6)
+        XCTAssertLessThan(ceiling, 0.5)
+        XCTAssertEqual(full.count, o.chime + bank.chimes[bank.chimes.count - 1].count)
+        // Too small a buffer takes what fits; a bank without a ladder rings no chime.
+        var short = [Float](repeating: 0, count: 50)
+        XCTAssertEqual(short.withUnsafeMutableBufferPointer { bank.renderLock(variant: 0, step: 0, into: $0) }, 50)
+        let quiet = PopBank.make(sampleRate: fs, seed: 5, ladderHz: [])
+        let m = [Float](unsafeUninitializedCapacity: quiet.lockCapacity) { buf, count in
+            count = quiet.renderLock(variant: 0, step: 0, into: buf)
+        }
+        XCTAssertEqual(m.count, max(quiet.cracks[0].count, quiet.pops[0].count, o.crumble + quiet.crumbles[0].count))
+        // Small stones take the high variants, large ones the low.
+        let order = bank.variantsByPitch
+        XCTAssertEqual(Set(order), Set(bank.pitches.indices))
+        XCTAssertEqual(order.map { bank.pitches[$0] }, bank.pitches.sorted(by: >))
+    }
+
     func testTheLadderClimbsWithEachLockInARow() {
         var ladder = ChimeLadder(steps: 4, breakSec: 3)
         XCTAssertEqual(ladder.lock(at: 10), 0)
