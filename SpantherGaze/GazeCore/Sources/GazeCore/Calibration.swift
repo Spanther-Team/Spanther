@@ -31,6 +31,30 @@ public struct RidgeModel: Codable, Sendable {
         return Vec2(px, py)
     }
 
+    /// Decides when the player counts as looking away from `RidgeModel.outOfRange`'s per-frame answer. While the
+    /// eyes sweep after a moving target, single frames spike past the calibrated range and must not blank the aim
+    /// or restart its filter (the app keeps the last point over them, as over a blink); only features out for
+    /// `graceSec` running mean a real glance away. The way back is instant.
+    public struct AwayGate: Sendable, Equatable {
+        public var graceSec: Double
+        private var outSince: Double?
+
+        public init(graceSec: Double = 0.15) { self.graceSec = graceSec }
+
+        /// `out`: this frame's `outOfRange`. Returns whether to treat the player as looking away.
+        public mutating func looksAway(out: Bool, t: Double) -> Bool {
+            guard out else {
+                outSince = nil
+                return false
+            }
+            let since = outSince ?? t
+            outSince = since
+            return t - since >= graceSec
+        }
+
+        public mutating func reset() { outSince = nil }
+    }
+
     /// True when any of `features` lies further outside its calibrated range than `margin` times that range.
     /// With the lookAt hit (features 0 and 1 of `GazeFeatures.vector`) this means the eyes point well off the
     /// screen: a glance away, which should hide the aim rather than send it flying. NaN never counts.

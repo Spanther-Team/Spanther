@@ -121,7 +121,7 @@ final class AppModel: ObservableObject {
             adapter = nil
             report = nil
             aimCorrection = .zero
-            filter.reset()
+            resetGazeFilters()
             if FaceTracker.isSupported { tracker.setNightVision(nightVision) }
             logTracking()
             applyBrightness()
@@ -150,6 +150,12 @@ final class AppModel: ObservableObject {
     private(set) var gazeHeld = false
     private(set) var model: RidgeModel?
     private var filter = OneEuroFilter2D()
+    /// The probe's gaze (screen pt): the model's own prediction, filtered on its own, without the aim correction the
+    /// games teach and with no point held over a blink or a stray frame. Nil when there is no fresh look this frame.
+    private(set) var probeGaze: Vec2?
+    private var probeFilter = OneEuroFilter2D()
+    /// Single frames past the calibrated range while the eyes sweep after a moving target are not a glance away.
+    private var awayGate = RidgeModel.AwayGate()
     private var lastStatusPush = 0.0
     private var blinkDetector = BlinkDetector(EnergyConfig())
     private var winkDetector = WinkDetector()
@@ -252,9 +258,30 @@ final class AppModel: ObservableObject {
     }
 
     /// The child picked on «Кто играет?»: the plays from now on are saved under their code.
+    /// Another child takes the phone: the last child's calibration and aim learning do not fit their eyes, and their
+    /// frames must not go into this child's CSV. The next probe or game asks for a new calibration.
     func pick(child id: UUID) {
+        let changed = clinic.playingID != id
         clinic.playingID = id
         if let c = clinic.record(id) { childCode = c.child.code }
+        guard changed else { return }
+        model = nil
+        adapter = nil
+        report = nil
+        aimCorrection = .zero
+        recentRaw = []
+        resetGazeFilters()
+        gaze = .lost
+        logger = SessionLogger()
+        logTracking()
+    }
+
+    /// Starts the aim filters and the looking-away gate afresh.
+    private func resetGazeFilters() {
+        filter.reset()
+        probeFilter.reset()
+        awayGate.reset()
+        probeGaze = nil
     }
 
     /// Writes the camera format and device state into the current session CSV.
@@ -344,6 +371,7 @@ final class AppModel: ObservableObject {
         }
 
         gazeHeld = s.features != nil && blink.freezeGaze
+        probeGaze = nil
         if s.features != nil, blink.freezeGaze {
             // Eyelid closing: the pupils drift down and the prediction dips, so keep the last gaze point
             // (screen pt) and do not feed the filter. Eyes shut longer than a blink count as tracking lost.
@@ -360,11 +388,17 @@ final class AppModel: ObservableObject {
         } else if let f = s.features {
             if let m = model {
                 let v = f.vector(GazeFeatures.FeatureSet(rawValue: m.featureSet) ?? featureSet)
-                if m.outOfRange(v, features: 0..<2, margin: RidgeModel.lookingAwayMargin) {
-                    // The eyes point well off the screen (a glance away). Hide the aim instead of extrapolating,
-                    // and start the filter afresh so the aim does not swing back in from far away.
+                let out = m.outOfRange(v, features: 0..<2, margin: RidgeModel.lookingAwayMargin)
+                if awayGate.looksAway(out: out, t: s.timestamp) {
+                    // The eyes have pointed well off the screen for a while (a glance away). Hide the aim instead
+                    // of extrapolating, and start the filters afresh so the aim does not swing back in from far away.
                     filter.reset()
+                    probeFilter.reset()
                     gaze = .notLooking
+                } else if out {
+                    // One stray frame past the range while the eyes sweep after a moving target: the aim keeps its
+                    // last point, like over a blink, and the filters are not fed the outlier.
+                    if case .point = gaze { gazeHeld = true } else { gaze = .notLooking }
                 } else {
                     let raw = m.predict(v), pose = HeadPose(f)
                     recentRaw.append((s.timestamp, raw, pose))
@@ -376,6 +410,7 @@ final class AppModel: ObservableObject {
                     }
                     aimCorrection = adaptAim ? (adapter?.correction(pose: pose) ?? .zero) : .zero
                     gaze = .point(filter.filter(raw + aimCorrection, t: s.timestamp))
+                    probeGaze = probeFilter.filter(raw, t: s.timestamp)
                 }
             } else {
                 gaze = .notLooking
@@ -413,11 +448,11 @@ final class AppModel: ObservableObject {
         if route == .probe, let p = probe, p.phase == .running {
             // Every tracked frame of the probe, with the target it shows, into the session's CSV.
             let host = s.timestamp
-            p.sample(host: host, gaze: gazePoint, distanceCm: s.features.map { $0.distance * 100 }, fps: s.fps, light: s.light)
+            p.sample(host: host, gaze: probeGazePoint, distanceCm: s.features.map { $0.distance * 100 }, fps: s.fps, light: s.light)
             if let f = s.features {
                 let t = p.time(host: host)
                 let target = p.gliderPosition(host: host) ?? p.plan.scheduledTarget(at: t).map { p.targetPosition($0.index) }
-                logger.sample(kind: "probe_frame", time: host, target: target, gaze: gazePoint, f: f, blink: s.blink,
+                logger.sample(kind: "probe_frame", time: host, target: target, gaze: probeGazePoint, f: f, blink: s.blink,
                               hold: blink.freezeGaze, processingMs: s.processingMs, light: s.light)
             }
         }
@@ -474,6 +509,14 @@ final class AppModel: ObservableObject {
         #endif
         if case .point(let p) = gaze { return p }
         return nil
+    }
+
+    /// What the probe scores (screen pt): `probeGaze`, or the bot's aim in a test run.
+    var probeGazePoint: Vec2? {
+        #if DEBUG
+        if let a = botAim { return a }
+        #endif
+        return probeGaze
     }
 
     // MARK: wink test
@@ -897,12 +940,10 @@ final class AppModel: ObservableObject {
         probeTimer?.invalidate()
         probeTimer = nil
         let record = clinic.record(p.childID)
-        let year = Calendar.current.component(.year, from: Date())
-        let adult = record?.child.birthYear.map { year - $0 >= 18 } ?? false
         let conditions = p.conditions(calibrationErrorCm: report?.meanErrorCm, night: nightVision)
         let metrics = p.run.metrics()
         let issues = ProbeQuality.issues(conditions: conditions, metrics: metrics, completed: p.run.finished,
-                                         maxErrorCm: adult ? 1.0 : 1.5)
+                                         maxErrorCm: ProbeQuality.maxErrorCm(sessionStart: p.start, birthYear: record?.child.birthYear))
         let result = p.run.result(qualityPassed: issues.isEmpty)
         let course = record?.openCourse
         let number = course.flatMap { c in record?.nextNumber(in: c.id) }
@@ -932,7 +973,7 @@ final class AppModel: ObservableObject {
         model = nil
         adapter = nil
         aimCorrection = .zero
-        filter.reset()
+        resetGazeFilters()
         calibrationSet = []
         checkSet = []
         checkPoses = []
@@ -982,7 +1023,7 @@ final class AppModel: ObservableObject {
         var X: [[Double]] = [], Y: [Vec2] = []
         for (t, fs) in calibrationSet { for f in fs { X.append(f.vector(featureSet)); Y.append(t) } }
         model = RidgeModel.fit(features: X, targets: Y, lambda: 0.01, featureSet: featureSet.rawValue)
-        filter.reset()
+        resetGazeFilters()
         // The adapter's tilt terms are measured from the grip the model was fitted at.
         let calibrated = calibrationSet.flatMap { $0.features }
         let distanceM = calibrated.isEmpty ? 0.28 : calibrated.map(\.distance).reduce(0, +) / Double(calibrated.count)

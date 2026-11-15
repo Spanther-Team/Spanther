@@ -107,6 +107,10 @@ public struct ProbeRun: Sendable {
     private var returnStart: Double?
     private var pursuitFrames = 0
     private var pursuitOn = 0
+    /// Frames with no gaze since the last seen one, not yet counted: a gap no longer than a blink is neither on
+    /// nor off the glider, so a child who blinks is not scored below one who does not.
+    private var pursuitPendingNil = 0
+    private var pursuitNilSince: Double?
     private var fitTimes: [Double] = []
     private var fitX: [Double] = []
     private var fitY: [Double] = []
@@ -320,8 +324,21 @@ public struct ProbeRun: Sendable {
     private mutating func stepPursuit(_ t: Double, _ g: Vec2?) {
         let r = plan.rules
         guard t >= r.pursuitScoredFromSec, t <= r.pursuitScoredToSec, let place = plan.pursuitPosition(at: t) else { return }
+        guard let g else {
+            // No gaze: a blink's worth of frames waits, and is dropped once the gaze comes back soon enough.
+            // A longer loss counts off the glider, its waiting frames included.
+            if let since = pursuitNilSince, t - since > r.blinkGraceSec {
+                pursuitFrames += pursuitPendingNil + 1
+                pursuitPendingNil = 0
+            } else {
+                if pursuitNilSince == nil { pursuitNilSince = t }
+                pursuitPendingNil += 1
+            }
+            return
+        }
+        pursuitPendingNil = 0
+        pursuitNilSince = nil
         pursuitFrames += 1
-        guard let g else { return }
         let far = g.distance(to: place)
         if far <= radiusDeg { pursuitOn += 1 }
         // The fit describes how the child follows while following: a glance elsewhere is left to the on-target
@@ -499,5 +516,14 @@ public enum ProbeQuality {
         if !((metrics[ProbeMetric.fps.rawValue] ?? conditions.trackingFps ?? 0) >= minFps) { issues.append(.frameRate) }
         if !completed { issues.append(.incomplete) }
         return issues
+    }
+
+    /// The calibration limit the gate judges by: 1.5 cm for a child, 1.0 for an adult (a clinician trying the
+    /// probe on themselves). The session's record and the export must use the same rule, or a failed session
+    /// shows no reason.
+    public static func maxErrorCm(sessionStart: Date, birthYear: Int?) -> Double {
+        let year = Calendar.current.component(.year, from: sessionStart)
+        let adult = birthYear.map { year - $0 >= 18 } ?? false
+        return adult ? 1.0 : 1.5
     }
 }
