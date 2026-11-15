@@ -6,8 +6,18 @@ import SwiftUI
 /// as tiny stars, a few of them glowing amber. Distractions, when given, are drawn brighter on top.
 /// Screen pt, y down. `time` is host time (CACurrentMediaTime), so the sway carries on from screen to screen.
 enum GardenPainter {
+    /// What to draw: the meteor game bakes the trees and the lianas into separate layers (each sways with its own
+    /// anchor in SpriteKit) and moves the spores as sprites.
+    struct Parts: OptionSet {
+        let rawValue: Int
+        static let trees = Parts(rawValue: 1)
+        static let lianas = Parts(rawValue: 2)
+        static let spores = Parts(rawValue: 4)
+        static let all: Parts = [.trees, .lianas, .spores]
+    }
+
     static func draw(_ g: inout GraphicsContext, _ garden: Garden, time: Double, growth: Double = 1,
-                     distractions: [Distraction] = [], trackTime: Double? = nil) {
+                     distractions: [Distraction] = [], trackTime: Double? = nil, parts: Parts = .all) {
         var active: [(Distraction, Double)] = []
         if let t = trackTime {
             for d in distractions {
@@ -15,13 +25,19 @@ enum GardenPainter {
                 if let u = d.progress(at: t) { active.append((d, u)) }
             }
         }
-        for i in garden.trees.indices { drawTree(&g, garden, i, time: time, growth: growth) }
-        for i in garden.lianas.indices {
-            var extra = 0.0
-            for (d, u) in active where d.kind == .swing && d.index == i { extra += 24 * sin(Double.pi * u) }
-            drawLiana(&g, garden, i, time: time, extraSway: extra, growth: growth)
+        if parts.contains(.trees) {
+            for i in garden.trees.indices { drawTree(&g, garden, i, time: time, growth: growth) }
         }
-        for i in garden.spores.indices { drawSpore(&g, garden, i, time: time) }
+        if parts.contains(.lianas) {
+            for i in garden.lianas.indices {
+                var extra = 0.0
+                for (d, u) in active where d.kind == .swing && d.index == i { extra += 24 * sin(Double.pi * u) }
+                drawLiana(&g, garden, i, time: time, extraSway: extra, growth: growth)
+            }
+        }
+        if parts.contains(.spores) {
+            for i in garden.spores.indices { drawSpore(&g, garden, i, time: time) }
+        }
         for (d, u) in active { drawDistraction(&g, garden, d, u, time: time, trackTime: trackTime ?? 0) }
     }
 

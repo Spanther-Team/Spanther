@@ -24,8 +24,8 @@ final class GameHUD: ObservableObject {
     @Published var decoyErrors = 0
 }
 
-/// Draws GameModel as sky-stones over the living garden (the scene is transparent and GameView puts it on top of
-/// RootView's background). No aim is drawn, as in the rhythm mode: the stone being looked at gets a warm light under
+/// Draws GameModel as sky-stones over the living garden, which the scene draws itself (GardenNode): the SKView is
+/// opaque, one renderer for the whole screen. No aim is drawn, as in the rhythm mode: the stone being looked at gets a warm light under
 /// it, its three engraved rings turn into alignment over the hold, cracks grow from the gaze point, and the lock bursts
 /// it into shards with the four-layer pop (architecture proposal §3). Every piece is a baked quad: no SKShapeNode. Model
 /// space is screen pt with y down; SpriteKit is y up, so `sk(_:)` flips.
@@ -90,6 +90,8 @@ final class GameScene: SKScene {
     private var chargingID: Int?
     private var chargeToneAt = (id: -1, time: 0.0)
     private var bursts: UInt64 = 0
+    private var gardenNode: GardenNode?
+    private var frameIndex = 0
 
     #if DEBUG
     /// Bot for the Simulator smoke test (see AppModel.autoplay).
@@ -103,9 +105,12 @@ final class GameScene: SKScene {
     #endif
 
     override func didMove(to view: SKView) {
-        // The paper and the garden behind are SwiftUI's (RootView); the scene draws only the game over them.
-        backgroundColor = .clear
-        view.allowsTransparency = true
+        // One renderer for the whole screen (architecture proposal, "Rendering"): the scene is opaque paper and
+        // draws the garden itself, so SwiftUI no longer composites a canvas under it. 60 fps at most.
+        backgroundColor = Atlas.UI.paper
+        view.allowsTransparency = false
+        view.preferredFramesPerSecond = 60
+        view.shouldCullNonVisibleNodes = true
         // SpriteView may present the scene again when SwiftUI rebuilds the view; keep the running game.
         guard world.parent == nil else {
             sounds?.hold(true)
@@ -131,6 +136,12 @@ final class GameScene: SKScene {
                           targetScale: targetScale, zoneFloorPt: zoneFloorPt, decoys: decoysOn)
         model = m
         let scale = view?.contentScaleFactor ?? 2
+        // The garden behind the play, still when Earth shakes (it is not in `world`).
+        gardenNode?.removeFromParent()
+        let gardenMade = GardenNode(size: size, scale: scale)
+        gardenMade.zPosition = -10
+        addChild(gardenMade)
+        gardenNode = gardenMade
         // Earth: only the cap that shows above the bottom edge, engraved like a globe on an old chart (one baked
         // quad). In landscape the whole circle would be about 3,100 pt across.
         let h = Double(size.height)
@@ -211,8 +222,12 @@ final class GameScene: SKScene {
     private func sk(_ p: Vec2) -> CGPoint { CGPoint(x: p.x, y: size.height - p.y) }
 
     override func update(_ currentTime: TimeInterval) {
-        let dt = lastTime == 0 ? 0 : currentTime - lastTime
+        // A paused scene skips frames: the first frame after a pause must not jump by the whole pause.
+        let dt = lastTime == 0 ? 0 : min(0.1, currentTime - lastTime)
         lastTime = currentTime
+        // The garden's spores only drift: 30 updates a second are enough.
+        frameIndex &+= 1
+        if frameIndex % 2 == 0 { gardenNode?.update(time: CACurrentMediaTime()) }
         let reloadBlinked = blinkReload()
         guard let m = model, !paused_ else { return }
         var botGaze: GazeInput?

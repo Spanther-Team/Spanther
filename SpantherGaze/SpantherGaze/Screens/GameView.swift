@@ -10,8 +10,8 @@ struct GameView: View {
         GeometryReader { geo in
             ZStack {
                 if let scene {
-                    // Transparent, over RootView's paper and garden.
-                    SpriteView(scene: scene, options: [.ignoresSiblingOrder, .allowsTransparency])
+                    // Opaque: the scene draws the paper and the garden itself (one renderer for the screen).
+                    SpriteView(scene: scene, options: [.ignoresSiblingOrder])
                     HUDView(hud: scene.hud, paused: $paused, musicOn: $app.musicOn, onQuit: { app.route = .menu },
                             onRecalibrate: { app.beginCalibration() },
                             canRecalibrate: app.mode == .eyes, touchMode: app.mode == .touch, decoysOn: scene.decoysOn,
@@ -21,6 +21,8 @@ struct GameView: View {
             .onAppear { if scene == nil { scene = makeScene(size: geo.size) } }
             .onChange(of: paused) { p in
                 scene?.paused_ = p
+                // Hidden behind the pause plate, the scene stops drawing and updating altogether.
+                scene?.isPaused = p
                 // The music fades out on the pause plate and comes back with the play.
                 app.gamePaused = p
             }

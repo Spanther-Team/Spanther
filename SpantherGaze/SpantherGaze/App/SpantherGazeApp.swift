@@ -43,15 +43,16 @@ struct RootView: View {
         .preferredColorScheme(app.route == .winkTest ? .dark : .light)
     }
 
-    /// Paper with the living garden behind the menu, the meteors and the calibration result; plain paper where
-    /// the eyes must not wander (calibration, check) or where the screen draws its own garden (rhythm).
+    /// Paper with the living garden behind the menu and the calibration result; plain paper where the eyes must not
+    /// wander (calibration, check) or where the screen draws its own garden (rhythm, and the meteors, whose SpriteKit
+    /// scene bakes it in: one renderer for the screen).
     @ViewBuilder private var background: some View {
         switch app.route {
         case .winkTest:
             Palette.space.ignoresSafeArea()
-        case .calibration, .check, .rhythm, .pursuit:
+        case .calibration, .check, .rhythm, .pursuit, .game:
             Atlas.paper.ignoresSafeArea()
-        case .menu, .result, .game:
+        case .menu, .result:
             ZStack {
                 Atlas.paper
                 LivingBackground(growFrom: app.launchTime)
