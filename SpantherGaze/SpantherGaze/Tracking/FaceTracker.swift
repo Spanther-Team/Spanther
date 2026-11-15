@@ -1,6 +1,7 @@
 import ARKit
 import AVFoundation
 import QuartzCore
+import os
 
 /// One ARKit frame turned into GazeCore types, plus timing for the debug overlay.
 struct TrackingSample {
@@ -37,6 +38,11 @@ struct TrackingInfo: Equatable {
 
 /// ARKit face tracking adapter (the `Tracking` module in CLAUDE.md). All ARKit work runs on `queue`;
 /// samples are delivered to the main thread through `onSample`.
+///
+/// The tracking loop (architecture proposal, "Tracking loop"): the delegate runs on its own serial queue and copies
+/// out only what it needs, so the ARFrame is let go when the callback returns; for the pupils it copies the face's
+/// square into a buffer of its own (FaceCropper) and leaves it in a latest-only mailbox: when Vision is busy the older
+/// crop is dropped, never queued. Signposts mark each stage for Instruments.
 final class FaceTracker: NSObject, ARSessionDelegate {
     static var isSupported: Bool { ARFaceTrackingConfiguration.isSupported }
 
@@ -53,6 +59,11 @@ final class FaceTracker: NSObject, ARSessionDelegate {
     private let lock = NSLock()
     private var latestPupils: (value: PupilOffsets, time: Double)?
     private var visionBusy = false
+    /// Guarded by `lock`. The newest face crop waiting for Vision; a newer one replaces it.
+    private var mailbox: (buffer: CVPixelBuffer, orientation: CGImagePropertyOrientation, time: Double)?
+    /// Tracking queue only.
+    private let cropper = FaceCropper()
+    private let signposter = OSSignposter(subsystem: "com.spanther.SpantherGaze", category: "tracking")
     /// Guarded by `lock`. Set on the main thread in `start`, read on `queue`.
     private var orientation = ScreenOrientation.landscapeRight
     /// Guarded by `lock`. Night vision: no Vision pupils (they are not found in the dark).
@@ -86,13 +97,17 @@ final class FaceTracker: NSObject, ARSessionDelegate {
         config.maximumNumberOfTrackedFaces = 1
         // The light estimate is logged on every frame, so a session played in the dark can be told apart.
         config.isLightEstimationEnabled = true
-        // CLAUDE.md asks for 60 fps. ARKit lists formats best first, and `max` keeps the first of the fastest,
-        // so this is the best format at the highest frame rate the device offers. Night vision takes the first of
-        // the slowest instead (30 fps on the iPhone 13): a frame can then be exposed twice as long, and in a dark
-        // room the light from the screen is all the camera gets.
+        // CLAUDE.md asks for 60 fps, and the architecture proposal for the smallest format that gives it: fewer
+        // pixels for ARKit, and Vision only ever sees the face's square. Without a 60 fps format, the first of the
+        // fastest. Night vision takes the first of the slowest instead (30 fps on the iPhone 13): a frame can then be
+        // exposed twice as long, and in a dark room the light from the screen is all the camera gets. The light
+        // estimate stays on in every mode: the session CSV, the calibration's "too dark" hint and the clinic's
+        // quality gate read it.
         let formats = ARFaceTrackingConfiguration.supportedVideoFormats
+        func pixels(_ f: ARConfiguration.VideoFormat) -> CGFloat { f.imageResolution.width * f.imageResolution.height }
+        let fast = formats.filter { $0.framesPerSecond >= 60 }
         let chosen = night ? formats.min(by: { $0.framesPerSecond < $1.framesPerSecond })
-            : formats.max(by: { $0.framesPerSecond < $1.framesPerSecond })
+            : (fast.min(by: { pixels($0) < pixels($1) }) ?? formats.max(by: { $0.framesPerSecond < $1.framesPerSecond }))
         if let chosen { config.videoFormat = chosen }
         info.offered = formats.isEmpty ? "-" : formats.map { Self.describe($0) }.joined(separator: " ")
         info.format = Self.describe(config.videoFormat)
@@ -193,6 +208,8 @@ final class FaceTracker: NSObject, ARSessionDelegate {
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let t0 = CACurrentMediaTime()
+        let interval = signposter.beginInterval("frame")
+        defer { signposter.endInterval("frame", interval) }
         fpsFrames += 1
         if t0 - fpsWindowStart >= 1 { fps = Double(fpsFrames) / (t0 - fpsWindowStart); fpsFrames = 0; fpsWindowStart = t0 }
 
@@ -201,40 +218,27 @@ final class FaceTracker: NSObject, ARSessionDelegate {
             return
         }
 
-        // Pupils: every second frame, never more than one Vision request in flight. Not in night vision.
+        // Pupils: the face's square, copied out of the frame every second frame into the latest-only mailbox. Vision
+        // takes the newest crop whenever it is free; a crop it had no time for is dropped. Not in night vision.
         frameCount += 1
         lock.lock()
         let night = nightVision
+        let raw = visionOrientationLocked
         lock.unlock()
-        if let detector = pupilDetector, !night, frameCount % 2 == 0 {
-            lock.lock()
-            let busy = visionBusy
-            if !busy { visionBusy = true }
-            let raw = visionOrientationLocked
-            lock.unlock()
-            if !busy {
-                let buffer = frame.capturedImage
-                let ts = frame.timestamp
-                // The sensor image is rotated and mirrored relative to the upright face; Transforms says how
-                // for the way the phone is held (CLAUDE.md rule 3).
+        if pupilDetector != nil, !night, frameCount % 2 == 0, let rect = FaceCropper.faceRect(frame: frame, face: face) {
+            let cropState = signposter.beginInterval("crop")
+            let crop = cropper.crop(frame.capturedImage, rect: rect)
+            signposter.endInterval("crop", cropState)
+            if let crop {
+                // The sensor image is rotated and mirrored relative to the upright face; Transforms says how for the
+                // way the phone is held (CLAUDE.md rule 3). A crop keeps the image's orientation.
                 let imageOrientation = CGImagePropertyOrientation(rawValue: raw) ?? .leftMirrored
-                visionQueue.async { [weak self] in
-                    let p = detector.detect(buffer, orientation: imageOrientation)
-                    guard let self else { return }
-                    self.lock.lock()
-                    if let p { self.latestPupils = (p, ts) }
-                    self.visionBusy = false
-                    let turned = self.recordVisionLocked(found: p != nil)
-                    let vision = self.visionDescriptionLocked
-                    self.lock.unlock()
-                    if turned {
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self else { return }
-                            self.info.vision = vision
-                            self.onInfo?(self.info)
-                        }
-                    }
-                }
+                lock.lock()
+                mailbox = (crop, imageOrientation, frame.timestamp)
+                let start = !visionBusy
+                if start { visionBusy = true }
+                lock.unlock()
+                if start { visionQueue.async { [weak self] in self?.drainMailbox() } }
             }
         }
         // A pupil result stays usable for 0.3 s. With 0.1 s, the first iPhone session had pupils on only 54% of
@@ -259,6 +263,41 @@ final class FaceTracker: NSObject, ARSessionDelegate {
         deliver(TrackingSample(timestamp: frame.timestamp, features: features, blink: blink,
                                processingMs: (CACurrentMediaTime() - t0) * 1000, fps: fps,
                                light: frame.lightEstimate.map { Double($0.ambientIntensity) }))
+    }
+
+    /// Vision's loop on `visionQueue`: takes the newest crop from the mailbox until it is empty, then stops.
+    private func drainMailbox() {
+        guard let detector = pupilDetector else {
+            lock.lock(); visionBusy = false; mailbox = nil; lock.unlock()
+            return
+        }
+        while true {
+            lock.lock()
+            guard let job = mailbox else {
+                visionBusy = false
+                lock.unlock()
+                return
+            }
+            mailbox = nil
+            lock.unlock()
+            let state = signposter.beginInterval("vision")
+            let p = detector.detect(job.buffer, orientation: job.orientation)
+            signposter.endInterval("vision", state)
+            lock.lock()
+            if let p { latestPupils = (p, job.time) }
+            let turned = recordVisionLocked(found: p != nil)
+            let vision = visionDescriptionLocked
+            // A crop made before the orientation turned would only fail again.
+            if turned { mailbox = nil }
+            lock.unlock()
+            if turned {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.info.vision = vision
+                    self.onInfo?(self.info)
+                }
+            }
+        }
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {

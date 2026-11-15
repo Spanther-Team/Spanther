@@ -70,4 +70,6 @@ Eye-controlled iPhone game for attention training (kids 6–10). Meteors fly at 
 
 - `SpantherGaze/` – the app (SwiftUI, SpriteKit, ARKit). Its README explains the gaze pipeline; SIDELOAD.md is the no-Mac route (GitHub Actions + Sideloadly).
 - `docs/` – balance and eye-tracking notes. Gameplay numbers live in `SpantherGaze/SpantherGaze/Resources/balance.json`.
-- `CLAUDE.md` – project rules and stages.
+- `SpantherGaze/GazeCore/` – the Swift package with the pure-Swift targets `GazeCore` (gaze math, game rules, the clinic's records, the probe) and `Feel` (fracture, cracks, motion and sound synthesis of the pop); `swift test` runs both.
+
+The project rules that used to live in CLAUDE.md (coordinate systems named on every function, transforms only in `Transforms.swift`, nothing heavy on the main thread, face data never leaving the phone except by export, nothing claimed to work on an iPhone before it was seen there) still hold.
