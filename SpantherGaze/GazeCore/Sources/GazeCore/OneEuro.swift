@@ -34,11 +34,14 @@ public struct OneEuroFilter: Sendable {
     public mutating func reset() { x = nil; dx = 0 }
 }
 
-/// Filters a screen point (screen pt). beta is tuned for point units: ~0.007 per pt/s.
+/// Filters a screen point (screen pt). beta is per pt/s of gaze speed: at 0.04, following a target at 500 pt/s
+/// (the warm-up's and the probe's glider at its fastest) lags about 4 pt, where 0.007 lagged near 18 pt and the
+/// aim fell off the moving target; standing still, the extra jitter is under a point. The lag is the same at
+/// 30 and at 60 frames a second.
 public struct OneEuroFilter2D: Sendable {
     public var fx: OneEuroFilter
     public var fy: OneEuroFilter
-    public init(minCutoff: Double = 1.0, beta: Double = 0.007) {
+    public init(minCutoff: Double = 1.0, beta: Double = 0.04) {
         fx = OneEuroFilter(minCutoff: minCutoff, beta: beta)
         fy = OneEuroFilter(minCutoff: minCutoff, beta: beta)
     }

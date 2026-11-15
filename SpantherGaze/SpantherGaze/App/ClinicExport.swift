@@ -58,7 +58,8 @@ enum ClinicExport {
         let c = s.conditions
         let metrics: [String: Double] = s.probe?.metrics ?? [:]
         let completed: Bool = s.probe?.completed ?? false
-        let issues = ProbeQuality.issues(conditions: c, metrics: metrics, completed: completed)
+        let limit = ProbeQuality.maxErrorCm(sessionStart: s.start, birthYear: data.record.child.birthYear)
+        let issues = ProbeQuality.issues(conditions: c, metrics: metrics, completed: completed, maxErrorCm: limit)
         var row: [String] = []
         row.append(data.record.child.code)
         row.append(data.course.title)

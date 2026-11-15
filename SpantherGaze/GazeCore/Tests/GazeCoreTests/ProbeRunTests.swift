@@ -394,10 +394,11 @@ final class ProbeRunTests: XCTestCase {
         let m = run.metrics()
         XCTAssertEqual(try number(m, .pursuitGain), 0.9, accuracy: 0.03)
         XCTAssertEqual(try number(m, .pursuitLagMs), 120, accuracy: 15)
-        // Two seconds away and three blinks outside them: about 2.9 s of the 24 s cannot be on the target.
+        // The blinks are neither on nor off; of the two seconds on something else, 1.7 s count off (their last
+        // 0.3 s read as a blink), so about 1.7 s of the 23 s scored cannot be on the target.
         let on = try number(m, .pursuitOnShare)
-        XCTAssertGreaterThan(on, 0.8)
-        XCTAssertLessThan(on, 0.885)
+        XCTAssertGreaterThan(on, 0.9)
+        XCTAssertLessThan(on, 0.95)
     }
 
     func testAGazeThatDoesNotFollowHasNoGain() throws {
@@ -483,5 +484,18 @@ final class ProbeRunTests: XCTestCase {
         XCTAssertEqual(ProbeQuality.issues(conditions: good, metrics: slow.metrics(), completed: slow.finished), [.frameRate])
         let (full, _) = play(plan) { self.attentive(plan, $0) }
         XCTAssertEqual(ProbeQuality.issues(conditions: good, metrics: full.metrics(), completed: full.finished), [])
+    }
+
+    func testTheAdultLimitIsOneRuleForTheGateAndTheExport() {
+        var parts = DateComponents()
+        parts.year = 2026
+        parts.month = 11
+        parts.day = 15
+        let day = Calendar.current.date(from: parts) ?? Date()
+        XCTAssertEqual(ProbeQuality.maxErrorCm(sessionStart: day, birthYear: 1990), 1.0)
+        XCTAssertEqual(ProbeQuality.maxErrorCm(sessionStart: day, birthYear: 2008), 1.0)
+        XCTAssertEqual(ProbeQuality.maxErrorCm(sessionStart: day, birthYear: 2009), 1.5)
+        XCTAssertEqual(ProbeQuality.maxErrorCm(sessionStart: day, birthYear: 2018), 1.5)
+        XCTAssertEqual(ProbeQuality.maxErrorCm(sessionStart: day, birthYear: nil), 1.5)
     }
 }
