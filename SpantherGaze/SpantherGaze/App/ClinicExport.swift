@@ -5,7 +5,8 @@ import UIKit
 /// to the center's own paperwork, with the same patient code and "Занятие 12 из 30": the per-course PDF (charts and the
 /// table), the Excel table (semicolons, decimal commas, UTF-8 with a byte order mark, like the plays' table) and a zip
 /// of the raw session CSVs with a one-page data dictionary. Written to a temporary folder for the share sheet; the
-/// files leave the phone only through it.
+/// files leave the phone only through it. On the main actor: the PDF renders SwiftUI charts with ImageRenderer.
+@MainActor
 enum ClinicExport {
     /// The three files of a course, made fresh. Main thread (the PDF draws SwiftUI charts).
     static func files(_ data: CourseData, sems: [ProbeMetric: Double], store: ClinicStore?) -> [URL] {
@@ -47,24 +48,54 @@ enum ClinicExport {
         time.locale = Locale(identifier: "ru_RU")
         time.dateFormat = "HH:mm"
         for s in data.sessions {
-            let c = s.conditions
-            let issues = ProbeQuality.issues(conditions: c, metrics: s.probe?.metrics ?? [:], completed: s.probe?.completed ?? false)
-            var row = [data.record.child.code, data.course.title, s.number.map { String($0) } ?? "",
-                       String(data.course.plannedSessions), day.string(from: s.start), time.string(from: s.start),
-                       ClinicText.place(s.place), s.onChart ? "да" : "нет",
-                       s.onChart ? "" : issues.map(ClinicText.issue).joined(separator: ", ")]
-            row += tableMetrics.map { m in
-                guard let v = s.probe?.metrics[m.rawValue], v.isFinite else { return "" }
-                return ClinicText.number(ClinicText.shown(m, v), digits: ClinicText.digits(m) + 1)
-            }
-            row += [num(c.calibrationErrorCm, 2), num(c.distanceCm, 1), num(c.trackingFps, 0), num(c.lightLm, 0),
-                    c.thermal ?? "", flag(c.lowPower), flag(c.night), num(c.batteryUsed.map { $0 * 100 }, 1),
-                    c.appVersion ?? "", c.device ?? "", s.tags.joined(separator: ", "), s.note ?? "",
-                    s.probe.map { String($0.seed) } ?? "", s.probe.map { String($0.version) } ?? "",
-                    s.probe.map { String($0.generatorVersion) } ?? ""]
-            rows.append(row)
+            rows.append(tableRow(s, data, day: day, time: time))
         }
         return rows.map { $0.map(cell).joined(separator: ";") }.joined(separator: "\r\n") + "\r\n"
+    }
+
+    /// One session's row, cell by cell: a long array literal of optionals is too slow for the type checker.
+    private static func tableRow(_ s: Session, _ data: CourseData, day: DateFormatter, time: DateFormatter) -> [String] {
+        let c = s.conditions
+        let metrics: [String: Double] = s.probe?.metrics ?? [:]
+        let completed: Bool = s.probe?.completed ?? false
+        let issues = ProbeQuality.issues(conditions: c, metrics: metrics, completed: completed)
+        var row: [String] = []
+        row.append(data.record.child.code)
+        row.append(data.course.title)
+        row.append(s.number.map { String($0) } ?? "")
+        row.append(String(data.course.plannedSessions))
+        row.append(day.string(from: s.start))
+        row.append(time.string(from: s.start))
+        row.append(ClinicText.place(s.place))
+        row.append(s.onChart ? "да" : "нет")
+        row.append(s.onChart ? "" : issues.map(ClinicText.issue).joined(separator: ", "))
+        for m in tableMetrics {
+            if let v = metrics[m.rawValue], v.isFinite {
+                row.append(ClinicText.number(ClinicText.shown(m, v), digits: ClinicText.digits(m) + 1))
+            } else {
+                row.append("")
+            }
+        }
+        row.append(num(c.calibrationErrorCm, 2))
+        row.append(num(c.distanceCm, 1))
+        row.append(num(c.trackingFps, 0))
+        row.append(num(c.lightLm, 0))
+        row.append(c.thermal ?? "")
+        row.append(flag(c.lowPower))
+        row.append(flag(c.night))
+        row.append(num(c.batteryUsed.map { $0 * 100 }, 1))
+        row.append(c.appVersion ?? "")
+        row.append(c.device ?? "")
+        row.append(s.tags.joined(separator: ", "))
+        row.append(s.note ?? "")
+        if let p = s.probe {
+            row.append(String(p.seed))
+            row.append(String(p.version))
+            row.append(String(p.generatorVersion))
+        } else {
+            row.append(contentsOf: ["", "", ""])
+        }
+        return row
     }
 
     private static func num(_ v: Double?, _ digits: Int) -> String {
