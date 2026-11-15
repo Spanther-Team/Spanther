@@ -13,8 +13,6 @@ targets:
       - SpantherGaze
       - path: GazeCore/Sources/GazeCore
         group: GazeCore
-      - path: GazeCore/Sources/Feel
-        group: Feel
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spanther.SpantherGaze

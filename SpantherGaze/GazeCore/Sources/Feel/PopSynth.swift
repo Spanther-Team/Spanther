@@ -223,52 +223,6 @@ public struct PopBank: Sendable {
 
     public var sampleCount: Int { Layer.allCases.reduce(0) { sum, l in sum + variants(of: l).reduce(0) { $0 + $1.count } } }
     public var byteCount: Int { sampleCount * MemoryLayout<Float>.size }
-
-    /// Where the crumble and the chime start in a lock's sound (samples); the crack and the pop start at once.
-    public var lockOffsets: (crumble: Int, chime: Int) {
-        (Int((PopMix.crumbleDelaySec * sampleRate).rounded()), Int((PopMix.chimeDelaySec * sampleRate).rounded()))
-    }
-
-    /// The longest lock sound the bank can make (samples): what a voice's buffer must hold.
-    public var lockCapacity: Int {
-        let o = lockOffsets
-        var n = 0
-        for v in pitches.indices { n = max(n, lockLength(variant: v, chime: nil, offsets: o)) }
-        for c in chimes { n = max(n, o.chime + c.count) }
-        return n
-    }
-
-    /// The variants of the noisy layers from the highest pitch to the lowest: a small stone takes one from the
-    /// front, a large one from the back.
-    public var variantsByPitch: [Int] { pitches.indices.sorted { pitches[$0] > pitches[$1] } }
-
-    /// Mixes one lock into `out`: variant `variant` of the noisy layers (wrapped round), the chime of ladder step
-    /// `step` (clamped; none when the bank has no ladder), each at its offset, all times `gain`. Returns how many
-    /// samples it wrote; the rest of `out` is left as it was. The layers' peaks add up to -6.4 dBFS (PopMix), so the
-    /// sum cannot clip and needs no limiter.
-    @discardableResult
-    public func renderLock(variant: Int, step: Int, gain: Float = 1, into out: UnsafeMutableBufferPointer<Float>) -> Int {
-        guard !pitches.isEmpty, let base = out.baseAddress else { return 0 }
-        let v = ((variant % pitches.count) + pitches.count) % pitches.count
-        let chime = chimes.isEmpty ? nil : chimes[min(chimes.count - 1, max(0, step))]
-        let o = lockOffsets
-        let n = min(out.count, lockLength(variant: v, chime: chime, offsets: o))
-        base.update(repeating: 0, count: n)
-        func add(_ layer: [Float], at offset: Int) {
-            guard offset < n else { return }
-            let m = min(layer.count, n - offset)
-            for i in 0..<m { base[offset + i] += layer[i] * gain }
-        }
-        add(cracks[v], at: 0)
-        add(pops[v], at: 0)
-        add(crumbles[v], at: o.crumble)
-        if let chime { add(chime, at: o.chime) }
-        return n
-    }
-
-    private func lockLength(variant v: Int, chime: [Float]?, offsets o: (crumble: Int, chime: Int)) -> Int {
-        max(cracks[v].count, pops[v].count, o.crumble + crumbles[v].count, chime.map { o.chime + $0.count } ?? 0)
-    }
 }
 
 /// Which chime a lock rings: each lock in a row climbs one step of the ladder, and a break in the row (a meteor

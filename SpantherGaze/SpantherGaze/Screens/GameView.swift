@@ -57,8 +57,6 @@ struct GameView: View {
         s.pendingBlinks = { [weak model] in model?.pendingBlinks ?? 0 }
         s.onGameEvent = { [weak model] kind, energy, level in model?.logGameEvent(kind: kind, energy: energy, level: level) }
         s.onLookedAt = { [weak model] p in model?.lookedAtMeteor = p }
-        s.pops = app.pops
-        s.haptics = app.haptics
         return s
     }
 }

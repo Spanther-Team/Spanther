@@ -84,10 +84,6 @@ final class AppModel: ObservableObject {
         didSet { if gamePaused != oldValue { updateAmbient() } }
     }
     private let ambient = AmbientPlayer()
-    /// The pop of a broken stone, its sound and its touch; GameScene plays them. Made once, so the sounds are
-    /// rendered once per launch.
-    let pops = PopPlayer()
-    let haptics = FeelHaptics()
 
     /// The scale of every target and hit zone now: balance.json's with «Мелкие цели», 1 without.
     var targetScale: Double { smallTargets ? balance.smallTargetScale : 1 }
@@ -945,9 +941,8 @@ final class AppModel: ObservableObject {
         #if DEBUG
         // The Simulator run reads this to see that the music's engine started and made sound.
         if autoplay != nil {
-            try? (ambient.debugLine() + "\n" + pops.debugLine())
-                .write(to: FileManager.default.temporaryDirectory.appendingPathComponent("ambient.txt"),
-                       atomically: true, encoding: .utf8)
+            try? ambient.debugLine().write(to: FileManager.default.temporaryDirectory.appendingPathComponent("ambient.txt"),
+                                           atomically: true, encoding: .utf8)
         }
         #endif
     }
