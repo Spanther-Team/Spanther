@@ -185,7 +185,7 @@ private struct HUDView: View {
 }
 
 /// The red sign as the HUD and the report draw it: a vermilion disc with a bar of paper across, like the one that
-/// flies in the game (DecoyNode).
+/// flies in the game (SignNode).
 struct RedSign: View {
     var body: some View {
         Canvas { g, size in
