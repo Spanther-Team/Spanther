@@ -205,3 +205,49 @@ public struct GazeFeatures: Sendable {
         return v
     }
 }
+
+/// The probe's field on this screen. Field deg: degrees of visual angle from the centre of the screen, x to the
+/// right and y down as the player sees the screen. Screen pt: origin top-left, y down. The eyes are taken to be
+/// `distanceCm` in front of the screen's centre, so a place `d` degrees to the side lies distance * tan(d) from it.
+public struct FieldMapping: Sendable, Equatable {
+    /// Screen size (screen pt).
+    public let size: Vec2
+    /// Screen points per centimetre on this phone.
+    public let ptPerCm: Double
+    /// From the eyes to the screen (cm).
+    public let distanceCm: Double
+    /// 1 when the whole field fits the screen at this distance; less when it had to shrink to fit (a small phone
+    /// held far away). Below 1 a field degree is that much smaller than a true degree.
+    public let fit: Double
+
+    public init(size: Vec2, ptPerCm: Double, distanceCm: Double, fieldHalfWidthDeg: Double, fieldHalfHeightDeg: Double,
+                marginPt: Double = 30) {
+        self.size = size
+        self.ptPerCm = max(1, ptPerCm)
+        self.distanceCm = max(1, distanceCm)
+        let reach = self.ptPerCm * self.distanceCm
+        let needX = reach * tan(fieldHalfWidthDeg * Double.pi / 180)
+        let needY = reach * tan(fieldHalfHeightDeg * Double.pi / 180)
+        let roomX = max(1, size.x / 2 - marginPt), roomY = max(1, size.y / 2 - marginPt)
+        fit = min(1, roomX / max(1e-9, needX), roomY / max(1e-9, needY))
+    }
+
+    /// Screen pt for one unit of tan(angle).
+    private var scale: Double { ptPerCm * distanceCm * fit }
+
+    /// Field deg -> screen pt.
+    public func screen(fromField p: Vec2) -> Vec2 {
+        Vec2(size.x / 2 + scale * tan(p.x * Double.pi / 180), size.y / 2 + scale * tan(p.y * Double.pi / 180))
+    }
+
+    /// Screen pt -> field deg.
+    public func field(fromScreen p: Vec2) -> Vec2 {
+        Vec2(atan((p.x - size.x / 2) / scale) * 180 / Double.pi, atan((p.y - size.y / 2) / scale) * 180 / Double.pi)
+    }
+
+    /// A length at the centre of the field: field deg -> screen pt.
+    public func length(fromDeg d: Double) -> Double { scale * tan(d * Double.pi / 180) }
+
+    /// The screen's half-width and half-height (field deg).
+    public var screenHalfDeg: Vec2 { field(fromScreen: size) }
+}
