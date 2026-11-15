@@ -2,9 +2,15 @@ name: iOS build
 
 on:
   push:
-    branches: [main]
+    # claude/clinician-build: the phase 1 branch builds on every push while it has no pull request yet.
+    branches: [main, claude/clinician-build]
   pull_request:
   workflow_dispatch:
+
+# A newer push to a work branch makes the older run pointless; runs on main always finish.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -16,7 +22,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: GazeCore unit tests
         working-directory: SpantherGaze/GazeCore
-        run: swift test
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/test.log" || {
+            bash "$GITHUB_WORKSPACE/.github/scripts/annotate-errors.sh" "$RUNNER_TEMP/test.log" "swift test"; exit 1; }
 
   unsigned-ipa:
     runs-on: macos-15
@@ -34,7 +43,8 @@ jobs:
             -sdk iphoneos \
             SYMROOT="$PWD/build" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/build.log" || {
+            bash .github/scripts/annotate-errors.sh "$RUNNER_TEMP/build.log" "Release build"; exit 1; }
       - name: Check bundled resources
         run: test -f build/Release-iphoneos/SpantherGaze.app/balance.json
       - name: Package .ipa
@@ -97,7 +107,8 @@ jobs:
             -sdk iphoneos \
             SYMROOT="$PWD/build" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/build.log" || {
+            bash .github/scripts/annotate-errors.sh "$RUNNER_TEMP/build.log" "Debug build, newest Xcode"; exit 1; }
           test -f build/Debug-iphoneos/SpantherGaze.app/balance.json
 
   # Runs the app in the iOS Simulator with the built-in bot (Debug launch argument -SpantherAutoplay),

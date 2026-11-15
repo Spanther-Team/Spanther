@@ -22,15 +22,25 @@ public struct Child: Codable, Sendable, Equatable, Identifiable {
     public var created: Date
     /// Hidden from the picker; the log and the charts stay.
     public var archived: Bool
+    /// What the tile says under the emblem, such as «Лиса»: a word the child picked, never a real name. Nil in logs
+    /// written before it existed.
+    public var nickname: String?
 
     public init(id: UUID = UUID(), code: String, emblem: Int, birthYear: Int? = nil, created: Date,
-                archived: Bool = false) {
+                archived: Bool = false, nickname: String? = nil) {
         self.id = id
         self.code = code
         self.emblem = emblem
         self.birthYear = birthYear
         self.created = created
         self.archived = archived
+        self.nickname = nickname
+    }
+
+    /// The tile's caption: the nickname when there is one, otherwise the code.
+    public var tileName: String {
+        let name = nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? code : name
     }
 }
 
@@ -63,9 +73,12 @@ public struct Course: Codable, Sendable, Equatable, Identifiable {
     public var started: Date
     public var closed: Date?
     public var procedures: [Procedure]
+    /// Where the course's sessions run: at the clinic or at home between visits. Nil in logs written before it
+    /// existed, which `runsAt` reads as the clinic.
+    public var place: Session.Place?
 
     public init(id: UUID = UUID(), title: String, plannedSessions: Int, probeVersion: Int, started: Date,
-                closed: Date? = nil, procedures: [Procedure] = []) {
+                closed: Date? = nil, procedures: [Procedure] = [], place: Session.Place? = .clinic) {
         self.id = id
         self.title = title
         self.plannedSessions = plannedSessions
@@ -73,7 +86,11 @@ public struct Course: Codable, Sendable, Equatable, Identifiable {
         self.started = started
         self.closed = closed
         self.procedures = procedures
+        self.place = place
     }
+
+    /// Where the course runs, the clinic when the log does not say.
+    public var runsAt: Session.Place { place ?? .clinic }
 }
 
 /// What the phone saw while a session ran, so an odd session can be explained instead of argued about.
@@ -93,10 +110,12 @@ public struct Conditions: Codable, Sendable, Equatable {
     public var appVersion: String?
     /// The model identifier, such as iPhone14,5.
     public var device: String?
+    /// Median ARKit light estimate on the face (lumen; about 1000 in a lit room, under 120 is dark).
+    public var lightLm: Double?
 
     public init(calibrationErrorCm: Double? = nil, distanceCm: Double? = nil, trackingFps: Double? = nil,
                 thermal: String? = nil, lowPower: Bool? = nil, night: Bool? = nil, batteryUsed: Double? = nil,
-                appVersion: String? = nil, device: String? = nil) {
+                appVersion: String? = nil, device: String? = nil, lightLm: Double? = nil) {
         self.calibrationErrorCm = calibrationErrorCm
         self.distanceCm = distanceCm
         self.trackingFps = trackingFps
@@ -106,6 +125,7 @@ public struct Conditions: Codable, Sendable, Equatable {
         self.batteryUsed = batteryUsed
         self.appVersion = appVersion
         self.device = device
+        self.lightLm = lightLm
     }
 }
 
@@ -155,10 +175,13 @@ public struct Session: Codable, Sendable, Equatable, Identifiable {
     /// The clinician's tags, such as «после ТМС» or «сонный».
     public var tags: [String]
     public var note: String?
+    /// The session's raw CSV (every tracked frame), a file name in the child's folder next to its log. It leaves
+    /// the phone only through the export.
+    public var csvFile: String?
 
     public init(id: UUID = UUID(), courseID: UUID?, number: Int?, start: Date, durationSec: Double,
                 place: Place = .clinic, conditions: Conditions = Conditions(), probe: ProbeResult? = nil,
-                plays: [SessionSummary] = [], tags: [String] = [], note: String? = nil) {
+                plays: [SessionSummary] = [], tags: [String] = [], note: String? = nil, csvFile: String? = nil) {
         self.id = id
         self.courseID = courseID
         self.number = number
@@ -170,7 +193,11 @@ public struct Session: Codable, Sendable, Equatable, Identifiable {
         self.plays = plays
         self.tags = tags
         self.note = note
+        self.csvFile = csvFile
     }
+
+    /// The session counts on the course chart: its probe ran to the end and passed the quality gate.
+    public var onChart: Bool { probe.map { $0.completed && $0.qualityPassed } ?? false }
 }
 
 /// One line of a child's log. Lines are only ever added: a mistake is voided by a new line, never erased.
