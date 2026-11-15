@@ -137,7 +137,7 @@ final class SoundEngine {
         engine.prepare()
         // When the output changes (headphones, a speaker) the engine stops by itself: build a new one.
         if let old = configObserver { NotificationCenter.default.removeObserver(old) }
-        configObserver =NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+        configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
                                                                 object: engine, queue: nil) { [weak self] _ in
             self?.queue.async { self?.rebuild() }
         }
