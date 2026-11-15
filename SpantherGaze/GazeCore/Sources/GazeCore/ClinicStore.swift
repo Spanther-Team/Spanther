@@ -33,8 +33,54 @@ public final class ClinicStore {
             .appendingPathComponent("clinic", isDirectory: true)
     }
 
+    /// A child's folder: the log and the sessions' raw CSV files.
+    public func folderURL(_ id: UUID) -> URL {
+        root.appendingPathComponent(id.uuidString, isDirectory: true)
+    }
+
     public func logURL(_ id: UUID) -> URL {
-        root.appendingPathComponent(id.uuidString, isDirectory: true).appendingPathComponent("log.jsonl")
+        folderURL(id).appendingPathComponent("log.jsonl")
+    }
+
+    /// On the phone every file of the clinic is readable only while the device is unlocked (complete protection);
+    /// elsewhere (tests on a Mac or Linux) there is nothing to set.
+    private static var protection: [FileAttributeKey: Any] {
+        #if os(iOS)
+        return [.protectionKey: FileProtectionType.complete]
+        #else
+        return [:]
+        #endif
+    }
+
+    /// Copies a session's raw CSV into the child's folder under `name` (made unique if a file of that name is there)
+    /// and returns the name it got, for `Session.csvFile`. The source is left where it was.
+    @discardableResult
+    public func storeFile(from source: URL, child id: UUID, name: String) throws -> String {
+        let fm = FileManager.default
+        let folder = folderURL(id)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: Self.protection)
+        let named = URL(fileURLWithPath: name)
+        let base = named.deletingPathExtension().lastPathComponent
+        let ext = named.pathExtension
+        var candidate = name
+        var n = 2
+        while fm.fileExists(atPath: folder.appendingPathComponent(candidate).path) {
+            candidate = ext.isEmpty ? "\(base)-\(n)" : "\(base)-\(n).\(ext)"
+            n += 1
+        }
+        let data = try Data(contentsOf: source)
+        guard fm.createFile(atPath: folder.appendingPathComponent(candidate).path, contents: data,
+                            attributes: Self.protection) else {
+            throw StoreError.cannotCreate(folder.appendingPathComponent(candidate).path)
+        }
+        return candidate
+    }
+
+    /// Where a session's raw CSV lives, when it has one and the file is still there.
+    public func csvURL(of session: Session, child id: UUID) -> URL? {
+        guard let name = session.csvFile else { return nil }
+        let url = folderURL(id).appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// Every child, archived ones too, by code.
@@ -84,11 +130,13 @@ public final class ClinicStore {
 
     /// Starts a child's log. The code must differ from those of the children not archived, ignoring case.
     @discardableResult
-    public func createChild(code: String, emblem: Int, birthYear: Int? = nil, by role: Role,
+    public func createChild(code: String, emblem: Int, birthYear: Int? = nil, nickname: String? = nil, by role: Role,
                             at date: Date = Date()) throws -> ChildRecord {
         let code = try checkedCode(code, except: nil)
         let n = Child.emblemCount
-        let child = Child(code: code, emblem: ((emblem % n) + n) % n, birthYear: birthYear, created: date)
+        let name = nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let child = Child(code: code, emblem: ((emblem % n) + n) % n, birthYear: birthYear, created: date,
+                          nickname: (name?.isEmpty ?? true) ? nil : name)
         try write(ClinicEvent(seq: 1, at: date, by: role, change: .childCreated(child: child)), to: child.id)
         return try refreshed(child.id)
     }
@@ -125,8 +173,8 @@ public final class ClinicStore {
             }
             _ = try refreshed(child.id)
         }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        guard FileManager.default.createFile(atPath: marker.path, contents: Data()) else {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: Self.protection)
+        guard FileManager.default.createFile(atPath: marker.path, contents: Data(), attributes: Self.protection) else {
             throw StoreError.cannotCreate(marker.path)
         }
         return children.count
@@ -154,8 +202,9 @@ public final class ClinicStore {
     private func write(_ event: ClinicEvent, to id: UUID) throws {
         let url = logURL(id)
         let fm = FileManager.default
-        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: url.path), !fm.createFile(atPath: url.path, contents: nil) {
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                               attributes: Self.protection)
+        if !fm.fileExists(atPath: url.path), !fm.createFile(atPath: url.path, contents: nil, attributes: Self.protection) {
             throw StoreError.cannotCreate(url.path)
         }
         var line = try encoder.encode(event)

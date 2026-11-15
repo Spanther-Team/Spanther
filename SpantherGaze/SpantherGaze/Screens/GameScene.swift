@@ -24,10 +24,11 @@ final class GameHUD: ObservableObject {
     @Published var decoyErrors = 0
 }
 
-/// Draws GameModel in the atlas look: ink on paper, over the living garden (the scene is transparent and
-/// GameView puts it on top of RootView's background). No aim is drawn, as in the rhythm mode: the meteor being
-/// looked at gets a warm light under it and its dial fills. Model space is screen pt with y down; SpriteKit is
-/// y up, so `sk(_:)` flips.
+/// Draws GameModel as sky-stones over the living garden, which the scene draws itself (GardenNode): the SKView is
+/// opaque, one renderer for the whole screen. No aim is drawn, as in the rhythm mode: the stone being looked at gets a warm light under
+/// it, its three engraved rings turn into alignment over the hold, cracks grow from the gaze point, and the lock bursts
+/// it into shards with the four-layer pop (architecture proposal §3). Every piece is a baked quad: no SKShapeNode. Model
+/// space is screen pt with y down; SpriteKit is y up, so `sk(_:)` flips.
 final class GameScene: SKScene {
     var gazeSource: () -> GazeInput = { .notLooking }
     var useTouch = false
@@ -55,25 +56,42 @@ final class GameScene: SKScene {
     /// A red sign left the play (looked at or passed by), with where it was (screen pt).
     var onDecoy: ((DecoyRecord, Vec2) -> Void)?
     let hud = GameHUD()
-    var paused_ = false
+    var paused_ = false {
+        // The pause plate: the rumble stops and the next lock starts the chime ladder from the bottom.
+        didSet { if paused_ { endCharge(); sounds?.resetLadder() } }
+    }
     /// Draw the aim (debugging only): a cursor a little off where the player looks pulls the eyes after it.
     var showAim = false
 
     private(set) var model: GameModel?
     private let world = SKNode()
-    private var rocks: [Int: RockNode] = [:]
-    private var signs: [Int: DecoyNode] = [:]
+    private var stones: [Int: StoneNode] = [:]
+    private var signs: [Int: SignNode] = [:]
     /// Red signs sent in so far: the first one comes with a line that says what to do.
     private var signsSeen = 0
-    private let reticle = SKShapeNode(circleOfRadius: 14)
-    private static let reticleColor = Atlas.UI.ink.withAlphaComponent(0.7)
-    private static let reticleStarvedColor = Atlas.UI.vermilion
+    /// The debug aim, a baked ring: ink, or vermilion while it rests on a stone the pool can't pay for.
+    private let reticle = SKSpriteNode()
     private var reticleStarved = false
     private var touchPoint: Vec2?
     private var lastTime: TimeInterval = 0
-    private let boomHaptic = UIImpactFeedbackGenerator(style: .medium)
     private let hitHaptic = UINotificationFeedbackGenerator()
     private var tapBurst = BurstCounter(count: 3, windowSec: 2)
+
+    // The pop (architecture proposal §3): baked art, stones made ahead, bursts in flight, the sound bank, the jar.
+    private var art: StoneArt?
+    private var factory: StoneFactory?
+    private var sounds: PopSounds?
+    private var pops: [PopEffect] = []
+    private let jar = SKSpriteNode()
+    private var signTextures: [Int: SKTexture] = [:]
+    private var waveTexture: SKTexture?
+    private var impactTexture: SKTexture?
+    /// The stone the gaze is charging now (it can be burned), and when its charge tone last sounded.
+    private var chargingID: Int?
+    private var chargeToneAt = (id: -1, time: 0.0)
+    private var bursts: UInt64 = 0
+    private var gardenNode: GardenNode?
+    private var frameIndex = 0
 
     #if DEBUG
     /// Bot for the Simulator smoke test (see AppModel.autoplay).
@@ -87,80 +105,90 @@ final class GameScene: SKScene {
     #endif
 
     override func didMove(to view: SKView) {
-        // The paper and the garden behind are SwiftUI's (RootView); the scene draws only the game over them.
-        backgroundColor = .clear
-        view.allowsTransparency = true
+        // One renderer for the whole screen (architecture proposal, "Rendering"): the scene is opaque paper and
+        // draws the garden itself, so SwiftUI no longer composites a canvas under it. 60 fps at most.
+        backgroundColor = Atlas.UI.paper
+        view.allowsTransparency = false
+        view.preferredFramesPerSecond = 60
+        view.shouldCullNonVisibleNodes = true
         // SpriteView may present the scene again when SwiftUI rebuilds the view; keep the running game.
-        guard world.parent == nil else { return }
+        guard world.parent == nil else {
+            sounds?.hold(true)
+            return
+        }
         addChild(world)
         start()
     }
 
+    override func willMove(from view: SKView) {
+        endCharge()
+        sounds?.hold(false)
+    }
+
     func start() {
         world.removeAllChildren()
-        rocks.removeAll()
+        stones.removeAll()
         signs.removeAll()
+        pops.removeAll()
         signsSeen = 0
+        chargingID = nil
         let m = GameModel(config: config, screen: Vec2(size.width, size.height), marginPt: marginPt,
                           targetScale: targetScale, zoneFloorPt: zoneFloorPt, decoys: decoysOn)
         model = m
-        // Earth: only the cap that shows above the bottom edge, engraved like a globe on an old chart. In landscape
-        // the whole circle would be about 3,100 pt across.
-        let cap = CGMutablePath()
-        let steps = 64
-        for i in 0...steps {
-            let x = -20 + (Double(size.width) + 40) * Double(i) / Double(steps)
-            let p = sk(Vec2(x, m.earthSurfaceY(atX: x)))
-            if i == 0 { cap.move(to: p) } else { cap.addLine(to: p) }
+        let scale = view?.contentScaleFactor ?? 2
+        // The garden behind the play, still when Earth shakes (it is not in `world`).
+        gardenNode?.removeFromParent()
+        let gardenMade = GardenNode(size: size, scale: scale)
+        gardenMade.zPosition = -10
+        addChild(gardenMade)
+        gardenNode = gardenMade
+        // Earth: only the cap that shows above the bottom edge, engraved like a globe on an old chart (one baked
+        // quad). In landscape the whole circle would be about 3,100 pt across.
+        let h = Double(size.height)
+        let top = CGFloat(h - m.earthTopY + 6)
+        if let earthTex = SceneArt.earth(width: size.width, top: top, margin: 20, surfaceY: { h - m.earthSurfaceY(atX: $0) },
+                                         centreX: m.earthCenter.x, radius: m.earthRadius, scale: scale) {
+            let earth = SKSpriteNode(texture: earthTex, size: CGSize(width: size.width + 40, height: top))
+            earth.anchorPoint = .zero
+            earth.position = CGPoint(x: -20, y: 0)
+            earth.name = "earth"
+            world.addChild(earth)
         }
-        cap.addLine(to: CGPoint(x: size.width + 20, y: -20))
-        cap.addLine(to: CGPoint(x: -20, y: -20))
-        cap.closeSubpath()
-        let earth = SKShapeNode(path: cap)
-        earth.fillColor = Atlas.UI.paperShade
-        earth.strokeColor = Atlas.UI.ink.withAlphaComponent(0.75)
-        earth.lineWidth = 1.5
-        earth.name = "earth"
-        world.addChild(earth)
-        // Parallels under the surface and short meridian ticks, in fine ink.
-        for depth in [14.0, 32.0] {
-            let line = CGMutablePath()
-            for i in 0...steps {
-                let x = -20 + (Double(size.width) + 40) * Double(i) / Double(steps)
-                let p = sk(Vec2(x, m.earthSurfaceY(atX: x) + depth))
-                if i == 0 { line.move(to: p) } else { line.addLine(to: p) }
-            }
-            let n = SKShapeNode(path: line)
-            n.strokeColor = Atlas.UI.ink.withAlphaComponent(depth < 20 ? 0.22 : 0.14)
-            n.lineWidth = 0.8
-            earth.addChild(n)
-        }
-        let ticks = CGMutablePath()
-        for i in 0..<14 {
-            let x = Double(size.width) * (Double(i) + 0.5) / 14
-            ticks.move(to: sk(Vec2(x, m.earthSurfaceY(atX: x) + 3)))
-            ticks.addLine(to: sk(Vec2(x, m.earthSurfaceY(atX: x) + 10)))
-        }
-        let tickNode = SKShapeNode(path: ticks)
-        tickNode.strokeColor = Atlas.UI.ink.withAlphaComponent(0.3)
-        tickNode.lineWidth = 0.8
-        earth.addChild(tickNode)
-        for i in 0..<7 {  // continents along the arc, tilted with it
-            let x = Double(size.width) * (Double(i) + 0.5) / 7
-            let slope = (x - m.earthCenter.x) / max(1, (m.earthRadius * m.earthRadius - pow(x - m.earthCenter.x, 2)).squareRoot())
-            let c = SKShapeNode(ellipseOf: CGSize(width: 50 + 30 * Double(i % 3), height: 12))
-            c.fillColor = UIColor(red: 0.235, green: 0.478, blue: 0.420, alpha: 0.28)
-            c.strokeColor = Atlas.UI.ink.withAlphaComponent(0.35)
-            c.lineWidth = 0.8
-            c.position = sk(Vec2(x + 12 * Double(i % 2), m.earthSurfaceY(atX: x) + 20 + 6 * Double(i % 2)))
-            c.zRotation = CGFloat(-atan(slope))
-            earth.addChild(c)
-        }
-        reticle.strokeColor = Self.reticleColor
-        reticle.lineWidth = 2
+        reticle.texture = SceneArt.circle(radius: 14, stroke: Atlas.UI.ink.withAlphaComponent(0.7).cgColor, width: 2,
+                                          scale: scale)
+        reticle.size = CGSize(width: 32, height: 32)
         reticle.zPosition = 50
         reticle.isHidden = true
         world.addChild(reticle)
+        // The pop's pieces: shared art, stones baked ahead for every size, the sound bank and the haptic players.
+        let artNow = StoneArt(scale: scale)
+        art = artNow
+        bursts &+= 1
+        let seed = UInt64(Date().timeIntervalSince1970 * 1000) &+ bursts
+        let made = StoneFactory(scale: scale, seed: seed)
+        made.prewarm(radii: config.classes.values.map { $0.sizePt / 2 * targetScale })
+        factory = made
+        if sounds == nil { sounds = PopSounds(seed: seed) }
+        sounds?.prepare(seed: seed)
+        Haptics.shared.prepare()
+        waveTexture = SceneArt.circle(radius: 30, stroke: Atlas.UI.ink.withAlphaComponent(0.6).cgColor, width: 2, scale: scale)
+        impactTexture = SceneArt.circle(radius: 40, stroke: Atlas.UI.vermilion.cgColor, width: 1.5,
+                                        fill: Atlas.UI.vermilion.withAlphaComponent(0.45).cgColor, scale: scale)
+        signTextures.removeAll()
+        // The jar the motes fly into, under the score at the top left (the camera's notch is further left).
+        jar.texture = SceneArt.jar(scale: scale)
+        jar.size = CGSize(width: 26, height: 30)
+        jar.position = CGPoint(x: 74, y: size.height - 80)
+        jar.zPosition = 40
+        world.addChild(jar)
+        // The crack shader compiles the first time it draws: draw it once now, almost invisibly, not at the first hold.
+        let warm = SKSpriteNode(texture: artNow.mote, size: CGSize(width: 2, height: 2))
+        warm.shader = StoneArt.crackShader
+        warm.setValue(SKAttributeValue(float: 0), forAttribute: "a_progress")
+        warm.alpha = 0.01
+        warm.position = CGPoint(x: 4, y: 4)
+        world.addChild(warm)
+        warm.run(.sequence([.wait(forDuration: 0.5), .removeFromParent()]))
         hud.shields = m.shields; hud.level = m.level; hud.score = 0
         hud.energy = m.energy; hud.energyMax = m.energyMax
         if let e = config.energy {
@@ -184,10 +212,8 @@ final class GameScene: SKScene {
         hud.energy = m.energy
         hud.reloadCount += 1
         onGameEvent?("reload", m.energy, m.level)
-        let wave = SKShapeNode(circleOfRadius: 30)
+        let wave = SKSpriteNode(texture: waveTexture, size: CGSize(width: 64, height: 64))
         wave.position = CGPoint(x: size.width / 2, y: size.height - 120)
-        wave.strokeColor = Atlas.UI.ink.withAlphaComponent(0.6)
-        wave.lineWidth = 2
         wave.zPosition = 60
         world.addChild(wave)
         wave.run(.sequence([.group([.scale(to: 9, duration: 0.6), .fadeOut(withDuration: 0.6)]), .removeFromParent()]))
@@ -196,8 +222,12 @@ final class GameScene: SKScene {
     private func sk(_ p: Vec2) -> CGPoint { CGPoint(x: p.x, y: size.height - p.y) }
 
     override func update(_ currentTime: TimeInterval) {
-        let dt = lastTime == 0 ? 0 : currentTime - lastTime
+        // A paused scene skips frames: the first frame after a pause must not jump by the whole pause.
+        let dt = lastTime == 0 ? 0 : min(0.1, currentTime - lastTime)
         lastTime = currentTime
+        // The garden's spores only drift: 30 updates a second are enough.
+        frameIndex &+= 1
+        if frameIndex % 2 == 0 { gardenNode?.update(time: CACurrentMediaTime()) }
         let reloadBlinked = blinkReload()
         guard let m = model, !paused_ else { return }
         var botGaze: GazeInput?
@@ -219,11 +249,14 @@ final class GameScene: SKScene {
         for e in m.update(dt: dt, gaze: gaze, held: held) {
             switch e {
             case .spawned(let a):
-                let n = RockNode(a, scale: CGFloat(m.targetScale))
-                rocks[a.id] = n
-                world.addChild(n)
+                if let art, let baked = factory?.take(radius: a.radius) {
+                    let n = StoneNode(baked: baked, art: art, k: CGFloat(m.targetScale))
+                    n.position = sk(a.position)
+                    stones[a.id] = n
+                    world.addChild(n)
+                }
             case .decoySpawned(let s):
-                let n = DecoyNode(s)
+                let n = SignNode(s, texture: signTexture(radius: s.radius))
                 n.position = sk(s.position)
                 signs[s.id] = n
                 world.addChild(n)
@@ -241,8 +274,7 @@ final class GameScene: SKScene {
                 hud.decoys += 1
                 onDecoy?(rec, s.position)
             case .destroyed(let a, let rec):
-                explode(at: sk(a.position), radius: CGFloat(a.radius))
-                rocks.removeValue(forKey: a.id)?.removeFromParent()
+                if let stone = stones.removeValue(forKey: a.id) { pop(stone, a, m) }
                 hud.score = m.score
                 onRecord?(rec)
             case .energySpent(_, let left):
@@ -252,12 +284,16 @@ final class GameScene: SKScene {
                 break
             case .hitEarth(let a, let rec):
                 impact(at: sk(a.position), radius: CGFloat(a.radius))
-                rocks.removeValue(forKey: a.id)?.removeFromParent()
+                stones.removeValue(forKey: a.id)?.removeFromParent()
+                if chargingID == a.id { endCharge() }
+                // A stone that got through breaks the run: the chime ladder starts from the bottom again.
+                sounds?.resetLadder()
                 hud.shields = max(0, m.shields)
                 onRecord?(rec)
             case .shieldsDepleted(let lvl):
-                rocks.values.forEach { $0.removeFromParent() }
-                rocks.removeAll()
+                stones.values.forEach { $0.removeFromParent() }
+                stones.removeAll()
+                endCharge()
                 hud.shields = m.shields
                 hud.energy = m.energy
                 onGameEvent?("restart", m.energy, lvl)
@@ -272,25 +308,87 @@ final class GameScene: SKScene {
             }
         }
 
-        for a in m.asteroids { rocks[a.id]?.sync(a, at: sk(a.position)) }
+        var gazePoint: CGPoint?
+        if case .point(let p) = gaze { gazePoint = sk(p) }
+        for a in m.asteroids { stones[a.id]?.sync(a, at: sk(a.position), gaze: gazePoint, dt: dt) }
         for s in m.decoys { signs[s.id]?.position = sk(s.position) }
         if !useTouch, botGaze == nil { onLookedAt?(m.asteroids.first { $0.isTargeted }?.position) }
         if hud.needsReload != m.needsReload { hud.needsReload = m.needsReload }
+        charge(m)
+        for p in pops { p.step(dt: dt) }
+        pops.removeAll { $0.finished }
 
         if showAim, case .point(let p) = gaze {
             reticle.isHidden = false
             reticle.position = sk(p)
             let r = useTouch ? 14 : max(10, marginPt * 0.5)
             reticle.setScale(r / 14)
-            // In eye mode the aim is about as big as the meteor's ring and sits right on it, so it would hide
-            // the red "no energy" ring. The aim turns red as well while it rests on a meteor the pool can't pay for.
+            // In eye mode the aim is about as big as the meteor's rings and sits right on them, so it would hide the
+            // vermilion "no energy" rings. The aim turns vermilion as well while it rests on a stone the pool can't pay for.
             if reticleStarved != m.starved {
                 reticleStarved = m.starved
-                reticle.strokeColor = m.starved ? Self.reticleStarvedColor : Self.reticleColor
+                reticle.color = Atlas.UI.vermilion
+                reticle.colorBlendFactor = m.starved ? 1 : 0
             }
         } else {
             reticle.isHidden = true
         }
+    }
+
+    /// The charge (architecture proposal, "The pop, step by step", 1): while the gaze rests on a stone it can burn, a
+    /// soft rising tone from the stone's side when it lands and a faint rumble rising with the hold.
+    private func charge(_ m: GameModel) {
+        let holding = m.asteroids.first { $0.isTargeted && !$0.isStarved }
+        if holding?.id != chargingID {
+            chargingID = holding?.id
+            if let h = holding {
+                let now = CACurrentMediaTime()
+                // A gaze that flickers at the zone's edge does not retrigger the tone.
+                if chargeToneAt.id != h.id || now - chargeToneAt.time > 0.6 {
+                    sounds?.charge(pan: StereoPlacement.pan(x: h.position.x, width: Double(size.width)))
+                    chargeToneAt = (h.id, now)
+                }
+                Haptics.shared.chargeBegan()
+            } else {
+                Haptics.shared.chargeEnded()
+            }
+        }
+        if let h = holding { Haptics.shared.chargeProgress(h.progress) }
+    }
+
+    private func endCharge() {
+        chargingID = nil
+        Haptics.shared.chargeEnded()
+    }
+
+    /// The lock (architecture proposal, "The pop, step by step", 4): the stone squashes for 60 ms and bursts into the
+    /// shards its cracks ran along; the crack, pop, chime and crumble play on one timeline with the crack and thud of
+    /// the haptics.
+    private func pop(_ stone: StoneNode, _ a: Asteroid, _ m: GameModel) {
+        guard let art else {
+            stone.removeFromParent()
+            return
+        }
+        bursts &+= 1
+        let center = stone.position
+        let floorY = Double(size.height) - m.earthSurfaceY(atX: Double(center.x))
+        let effect = PopEffect(stone: stone, center: center, rotation: a.rotation, floorY: floorY, jar: jar, art: art,
+                               seed: bursts &* 0x2545_F491_4F6C_DD1D)
+        stone.removeFromParent()
+        world.addChild(effect.node)
+        pops.append(effect)
+        if chargingID == a.id { chargingID = nil }
+        sounds?.lock(pan: StereoPlacement.pan(x: Double(center.x), width: Double(size.width)), at: CACurrentMediaTime() + 0.005)
+        Haptics.shared.lock()
+    }
+
+    /// The red sign's quad for one radius, baked on first use.
+    private func signTexture(radius: Double) -> SKTexture? {
+        let key = Int((radius * 2).rounded())
+        if let t = signTextures[key] { return t }
+        let t = SceneArt.redSign(radius: CGFloat(radius), scale: view?.contentScaleFactor ?? 2)
+        signTextures[key] = t
+        return t
     }
 
     #if DEBUG
@@ -351,56 +449,12 @@ final class GameScene: SKScene {
         }
     }
 
-    /// A burnt meteor bursts like a star on the chart: an ink ring and a vermilion one, and small four-pointed
-    /// stars thrown out.
-    private func explode(at p: CGPoint, radius: CGFloat) {
-        boomHaptic.impactOccurred()
-        for (k, color) in [Atlas.UI.vermilion, Atlas.UI.ink].enumerated() {
-            let ring = SKShapeNode(circleOfRadius: radius)
-            ring.position = p
-            ring.strokeColor = color
-            ring.lineWidth = k == 0 ? 2.5 : 1
-            world.addChild(ring)
-            let grow: CGFloat = k == 0 ? 2.2 : 2.8
-            ring.run(.sequence([.group([.scale(to: grow, duration: 0.5), .fadeOut(withDuration: 0.5)]), .removeFromParent()]))
-        }
-        for i in 0..<(10 + Int(radius / 5)) {
-            let q = SKShapeNode(path: Self.starPath(CGFloat.random(in: 2.5...max(3, radius * 0.16))))
-            q.position = p
-            q.fillColor = i % 3 == 0 ? Atlas.UI.vermilion : Atlas.UI.ink
-            q.strokeColor = .clear
-            world.addChild(q)
-            let a = CGFloat.random(in: 0...(2 * .pi)), d = CGFloat.random(in: 0.7...2.2) * radius
-            q.run(.sequence([.group([.moveBy(x: cos(a) * d, y: sin(a) * d, duration: 0.7),
-                                     .rotate(byAngle: CGFloat.random(in: -2...2), duration: 0.7),
-                                     .fadeOut(withDuration: 0.7)]), .removeFromParent()]))
-        }
-    }
-
-    /// The atlas's four-pointed star (Atlas.star) as a CGPath around the origin.
-    static func starPath(_ r: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        func pt(_ radius: CGFloat, _ angle: Double) -> CGPoint {
-            let dx: Double = cos(angle), dy: Double = sin(angle)
-            return CGPoint(x: CGFloat(dx) * radius, y: CGFloat(dy) * radius)
-        }
-        path.move(to: pt(r, Double.pi / 2))
-        for k in 0..<4 {
-            let tip = pt(r, Double.pi / 2 + Double(k + 1) * Double.pi / 2)
-            let ctrl = pt(r * 0.2, Double.pi / 2 + Double(k) * Double.pi / 2 + Double.pi / 4)
-            path.addQuadCurve(to: tip, control: ctrl)
-        }
-        path.closeSubpath()
-        return path
-    }
-
+    /// A stone that reached Earth: a vermilion flash where it hit (one baked quad) and a short shake of the world.
     private func impact(at p: CGPoint, radius: CGFloat) {
         hitHaptic.notificationOccurred(.error)
-        let flash = SKShapeNode(circleOfRadius: radius * 1.4)
+        let d = radius * 2.8
+        let flash = SKSpriteNode(texture: impactTexture, size: CGSize(width: d, height: d))
         flash.position = p
-        flash.fillColor = Atlas.UI.vermilion.withAlphaComponent(0.45)
-        flash.strokeColor = Atlas.UI.vermilion
-        flash.lineWidth = 1.5
         world.addChild(flash)
         flash.run(.sequence([.group([.scale(to: 2, duration: 0.5), .fadeOut(withDuration: 0.5)]), .removeFromParent()]))
         let s: CGFloat = 10
@@ -416,165 +470,5 @@ final class GameScene: SKScene {
         guard let t = touches.first, let v = view else { return }
         let p = t.location(in: v)   // UIKit: top-left origin, y down = model space
         touchPoint = Vec2(p.x, p.y)
-    }
-}
-
-/// One meteor in the atlas look: an ink-outlined rock with engraved hatching that warms to vermilion as it burns,
-/// a dial round it like a rhythm note's (a faint full circle, the ink arc of the burn, a vermilion mark at the
-/// top), and a warm light under it while it is looked at, which stands in for the hidden aim. Cracks of paper show
-/// from half way. Looked at without energy: a dashed vermilion ring that says "reload first".
-final class RockNode: SKNode {
-    private let body: SKShapeNode
-    private let hatch = SKShapeNode()
-    private let ring = SKShapeNode()
-    private let track: SKShapeNode
-    private let starvedRing: SKShapeNode
-    private let mark = SKShapeNode()
-    private let lamp: SKShapeNode
-    private let cracks = SKShapeNode()
-    private let radius: CGFloat
-    /// How far the dial sits outside the rock (pt).
-    private let dialGap: CGFloat
-
-    private static let paperRGB: (CGFloat, CGFloat, CGFloat) = (0.906, 0.875, 0.820)
-    private static let hotRGB: (CGFloat, CGFloat, CGFloat) = (0.761, 0.271, 0.176)
-
-    /// `scale`: «Мелкие цели». The rock's radius already has it; the dial, the mark and the light round it shrink
-    /// by it too, so the whole meteor is that much smaller, not only its body.
-    init(_ a: Asteroid, scale k: CGFloat = 1) {
-        let radius = CGFloat(a.radius)
-        self.radius = radius
-        dialGap = 10 * k
-        let path = CGMutablePath()
-        let n = 11
-        for i in 0..<n {
-            let ang = CGFloat(i) / CGFloat(n) * 2 * .pi
-            let k = CGFloat.random(in: 0.84...1.04)
-            let pt = CGPoint(x: cos(ang) * radius * k, y: sin(ang) * radius * k)
-            if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
-        }
-        path.closeSubpath()
-        body = SKShapeNode(path: path)
-        body.strokeColor = Atlas.UI.ink.withAlphaComponent(0.9)
-        body.lineWidth = 1.6
-        let dial = radius + 10 * k
-        track = SKShapeNode(circleOfRadius: dial)
-        starvedRing = SKShapeNode(path: CGPath(ellipseIn: CGRect(x: -dial, y: -dial, width: 2 * dial, height: 2 * dial),
-                                               transform: nil)
-            .copy(dashingWithPhase: 0, lengths: [5, 5]))
-        lamp = SKShapeNode(circleOfRadius: radius + 18 * k)
-        super.init()
-        lamp.fillColor = Atlas.UI.vermilion.withAlphaComponent(0.13)
-        lamp.strokeColor = .clear
-        lamp.isHidden = true
-        track.strokeColor = Atlas.UI.ink.withAlphaComponent(0.14)
-        track.lineWidth = 1.5
-        track.isHidden = true
-        starvedRing.strokeColor = Atlas.UI.vermilion
-        starvedRing.lineWidth = 2
-        starvedRing.isHidden = true
-        ring.strokeColor = Atlas.UI.ink
-        ring.lineWidth = 2.5
-        ring.lineCap = .round
-        let mp = CGMutablePath()
-        mp.move(to: CGPoint(x: 0, y: radius + 4 * k))
-        mp.addLine(to: CGPoint(x: 0, y: radius + 16 * k))
-        mark.path = mp
-        mark.strokeColor = Atlas.UI.vermilion
-        mark.lineWidth = 3
-        mark.lineCap = .round
-        mark.isHidden = true
-        // Engraved hatching: short parallel strokes on one side of the rock.
-        let hp = CGMutablePath()
-        for i in 0..<4 {
-            let x = -radius * 0.5 + CGFloat(i) * radius * 0.22
-            hp.move(to: CGPoint(x: x, y: -radius * 0.45))
-            hp.addLine(to: CGPoint(x: x + radius * 0.18, y: -radius * 0.1))
-        }
-        hatch.path = hp
-        hatch.strokeColor = Atlas.UI.ink.withAlphaComponent(0.35)
-        hatch.lineWidth = 0.8
-        body.addChild(hatch)
-        let cp = CGMutablePath()
-        for i in 0..<4 {
-            let ang = CGFloat(i) * 1.6 + 0.4
-            cp.move(to: .zero)
-            cp.addLine(to: CGPoint(x: cos(ang) * radius * 0.5, y: sin(ang) * radius * 0.5))
-            cp.addLine(to: CGPoint(x: cos(ang + 0.4) * radius * 0.85, y: sin(ang + 0.4) * radius * 0.85))
-        }
-        cracks.path = cp
-        cracks.strokeColor = Atlas.UI.paper
-        cracks.lineWidth = max(1.5, radius * 0.05)
-        cracks.alpha = 0
-        body.addChild(cracks)
-        addChild(lamp)
-        addChild(body)
-        addChild(track)
-        addChild(starvedRing)
-        addChild(ring)
-        addChild(mark)
-        zPosition = 10
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    private var lastHeat: CGFloat = -1
-
-    func sync(_ a: Asteroid, at p: CGPoint) {
-        position = p
-        starvedRing.isHidden = !a.isStarved
-        body.zRotation = CGFloat(a.rotation)
-        let t = CGFloat(min(1, a.progress))
-        // The fill warms from the paper's shade to vermilion; recoloured only when it changes visibly.
-        if abs(t - lastHeat) > 0.02 {
-            lastHeat = t
-            let (r0, g0, b0) = Self.paperRGB, (r1, g1, b1) = Self.hotRGB
-            body.fillColor = UIColor(red: r0 + (r1 - r0) * t, green: g0 + (g1 - g0) * t, blue: b0 + (b1 - b0) * t, alpha: 1)
-        }
-        cracks.alpha = t < 0.5 ? 0 : (t - 0.5) * 2
-        let looked = a.isTargeted || t > 0
-        lamp.isHidden = !a.isTargeted
-        track.isHidden = !looked
-        mark.isHidden = !looked
-        if t > 0 {
-            // SpriteKit is y up: from 12 o'clock clockwise as the player sees it.
-            let path = CGMutablePath()
-            path.addArc(center: .zero, radius: radius + dialGap, startAngle: .pi / 2, endAngle: .pi / 2 - t * 2 * .pi, clockwise: true)
-            ring.path = path
-            if t > 0.3 { body.position = CGPoint(x: CGFloat.random(in: -1...1) * t * 2, y: CGFloat.random(in: -1...1) * t * 2) }
-        } else {
-            ring.path = nil
-            body.position = .zero
-        }
-    }
-}
-
-/// A red sign in the atlas look: a flat vermilion disc with a bar of paper across it, the "no entry" of road signs,
-/// so it reads by its shape as well as by its colour. It drifts in like a meteor and is meant to be passed by.
-/// Nothing on it moves or blinks: it appears and leaves by fading.
-final class DecoyNode: SKNode {
-    init(_ s: Decoy) {
-        let r = CGFloat(s.radius)
-        let disc = SKShapeNode(circleOfRadius: r)
-        disc.fillColor = Atlas.UI.vermilion
-        disc.strokeColor = Atlas.UI.ink.withAlphaComponent(0.55)
-        disc.lineWidth = 1.2
-        let bar = SKShapeNode(rectOf: CGSize(width: r * 1.15, height: r * 0.32), cornerRadius: r * 0.08)
-        bar.fillColor = Atlas.UI.paper
-        bar.strokeColor = .clear
-        super.init()
-        addChild(disc)
-        addChild(bar)
-        zPosition = 9
-        alpha = 0
-        run(.fadeIn(withDuration: 0.5))
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    /// Fades away where it is.
-    func leave(seconds: Double) {
-        removeAllActions()
-        run(.sequence([.group([.fadeOut(withDuration: seconds), .scale(to: 0.85, duration: seconds)]), .removeFromParent()]))
     }
 }

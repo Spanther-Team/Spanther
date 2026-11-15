@@ -87,6 +87,16 @@ struct MenuView: View {
                 sessionsButton(withTitle: false)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+            // The clinic: «Кто играет?», the session's probe, and behind Face ID the profiles and charts.
+            Button { app.route = .clinic } label: {
+                Image(systemName: "person.crop.square")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Atlas.ink)
+                    .frame(width: 44, height: 44)
+                    .background(Atlas.paper.opacity(0.88), in: Capsule())
+                    .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
+            }
+            .accessibilityLabel("Кто играет")
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .semibold))
