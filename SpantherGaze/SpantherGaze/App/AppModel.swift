@@ -117,11 +117,8 @@ final class AppModel: ObservableObject {
         didSet {
             guard nightVision != oldValue else { return }
             UserDefaults.standard.set(nightVision, forKey: "nightVision")
-            model = nil
-            adapter = nil
+            dropCalibration()
             report = nil
-            aimCorrection = .zero
-            resetGazeFilters()
             if FaceTracker.isSupported { tracker.setNightVision(nightVision) }
             logTracking()
             applyBrightness()
@@ -148,7 +145,16 @@ final class AppModel: ObservableObject {
     /// The gaze point is the one kept from before an eyelid moved (a blink), not a fresh look. A red sign's look
     /// does not count such frames.
     private(set) var gazeHeld = false
-    private(set) var model: RidgeModel?
+    /// The calibrated gaze model that plays (GazeCore `GazeModel`): the head-frame one, or the first one on the rays'
+    /// screen hits when the check dots speak against the head-frame fit.
+    private(set) var model: GazeModel?
+    /// The other fitted model. It does not play; its aim goes into the session CSV next to the playing one's, so
+    /// one session on the phone compares the two.
+    private var shadowModel: GazeModel?
+    /// Both fits of the last calibration. Its check dots choose which one plays.
+    private var fitted: (head: HeadGazeModel?, screen: RidgeModel?) = (nil, nil)
+    /// Both models' mean miss on the check dots (screen pt), for the session CSV.
+    private var modelCheck: (headMissPt: Double?, screenMissPt: Double?) = (nil, nil)
     private var filter = OneEuroFilter2D()
     /// The probe's gaze (screen pt): the model's own prediction, filtered on its own, without the aim correction the
     /// games teach and with no point held over a blink or a stray frame. Nil when there is no fresh look this frame.
@@ -178,6 +184,8 @@ final class AppModel: ObservableObject {
     /// A meteor being looked at teaches the adapter a little on every frame: 20 frames weigh as much as one note.
     static let meteorLabelWeight = 1.0 / 20
     private var checkPoses: [HeadPose] = []
+    /// Warm-up: tells from the model's own aim whether the eyes follow the dot, which then teaches the adapter.
+    private var followGate = FollowGate()
 
     /// Rhythm mode: the tracks in the bundle (tracks.json) and the play in progress.
     let rhythmTracks: [RhythmTrack]
@@ -196,6 +204,8 @@ final class AppModel: ObservableObject {
     private var collectedGaze: [Vec2] = []
     private var calibrationSet: [(target: Vec2, features: [GazeFeatures])] = []
     private var checkSet: [(target: Vec2, predictions: [Vec2])] = []
+    /// The check dots' frames, on which both fitted models are compared.
+    private var checkFeatures: [(target: Vec2, features: [GazeFeatures])] = []
     private var distances: [Double] = []
 
     init() {
@@ -265,15 +275,47 @@ final class AppModel: ObservableObject {
         clinic.playingID = id
         if let c = clinic.record(id) { childCode = c.child.code }
         guard changed else { return }
-        model = nil
-        adapter = nil
+        dropCalibration()
         report = nil
-        aimCorrection = .zero
-        recentRaw = []
-        resetGazeFilters()
         gaze = .lost
         logger = SessionLogger()
         logTracking()
+    }
+
+    /// Forgets the calibration: both fitted models and what the aim adapter learned on top.
+    private func dropCalibration() {
+        model = nil
+        shadowModel = nil
+        fitted = (nil, nil)
+        modelCheck = (nil, nil)
+        adapter = nil
+        aimCorrection = .zero
+        recentRaw = []
+        resetGazeFilters()
+    }
+
+    /// Sets the model that plays and the one that only shadows it, with a fresh aim adapter for the playing one.
+    private func play(_ m: GazeModel?) {
+        model = m
+        switch m {
+        case .some(.head): shadowModel = fitted.screen.map { GazeModel.screen($0) }
+        case .some(.screen): shadowModel = fitted.head.map { GazeModel.head($0) }
+        case .none: shadowModel = nil
+        }
+        aimCorrection = .zero
+        recentRaw = []
+        resetGazeFilters()
+        // The adapter's tilt terms are measured from the grip the model was fitted at.
+        let calibrated = calibrationSet.flatMap { $0.features }
+        let distanceM = calibrated.isEmpty ? 0.28 : calibrated.map(\.distance).reduce(0, +) / Double(calibrated.count)
+        var config = GazeAdapterConfig()
+        // The head-frame model turns its aim with the head by geometry, so no follow of the head is assumed for it:
+        // the adapter starts from no correction and adds only what the labels show.
+        if case .some(.head) = m {
+            config.followPitch = 0
+            config.followYaw = 0
+        }
+        adapter = m == nil ? nil : HeadPose.mean(calibrated).map { GazeAdapter(reference: $0, distanceM: distanceM, config: config) }
     }
 
     /// Starts the aim filters and the looking-away gate afresh.
@@ -289,6 +331,15 @@ final class AppModel: ObservableObject {
         let i = tracker.info
         logger.tracking(format: i.format, offered: i.offered, thermal: i.thermal, lowPower: i.lowPower,
                         screen: i.screen, vision: i.vision, night: i.night, time: CACurrentMediaTime())
+        logModel()
+    }
+
+    /// Writes which gaze model plays, and how both did on the check dots, into the current session CSV. A session
+    /// started after the calibration (a wink test, another child's file) says so too.
+    private func logModel() {
+        guard let m = model else { return }
+        logger.model(time: CACurrentMediaTime(), name: m.name, headMissPt: modelCheck.headMissPt,
+                     screenMissPt: modelCheck.screenMissPt)
     }
 
     /// Night vision lights the face with the screen: full brightness on every screen but the menu, while the app
@@ -340,6 +391,11 @@ final class AppModel: ObservableObject {
 
     private func handle(_ s: TrackingSample) {
         lastSampleTime = s.timestamp
+        // The warm-up's dot and its minute wait while the camera does not see the face.
+        if route == .pursuit, mode == .eyes, let p = pursuit { p.face(found: s.features != nil, host: s.timestamp) }
+        // This frame's aim of the playing model before the correction and the filter, and the other model's aim
+        // (screen pt), for the session CSV.
+        var rawAim: Vec2?, altAim: Vec2?
         var blink = BlinkUpdate(freezeGaze: false, eyesClosed: false, blinkEnded: nil, reload: false)
         if s.features != nil, let b = s.blink {
             blink = blinkDetector.update(time: s.timestamp, left: b.left, right: b.right)
@@ -387,8 +443,10 @@ final class AppModel: ObservableObject {
             }
         } else if let f = s.features {
             if let m = model {
-                let v = f.vector(GazeFeatures.FeatureSet(rawValue: m.featureSet) ?? featureSet)
-                let out = m.outOfRange(v, features: 0..<2, margin: RidgeModel.lookingAwayMargin)
+                let raw = m.predict(f)
+                let out = raw == nil || m.looksOut(f)
+                rawAim = raw
+                altAim = shadowModel?.predict(f)
                 if awayGate.looksAway(out: out, t: s.timestamp) {
                     // The eyes have pointed well off the screen for a while (a glance away). Hide the aim instead
                     // of extrapolating, and start the filters afresh so the aim does not swing back in from far away.
@@ -399,14 +457,24 @@ final class AppModel: ObservableObject {
                     // One stray frame past the range while the eyes sweep after a moving target: the aim keeps its
                     // last point, like over a blink, and the filters are not fed the outlier.
                     if case .point = gaze { gazeHeld = true } else { gaze = .notLooking }
-                } else {
-                    let raw = m.predict(v), pose = HeadPose(f)
+                } else if let raw {
+                    let pose = HeadPose(f)
                     recentRaw.append((s.timestamp, raw, pose))
                     if let i = recentRaw.firstIndex(where: { $0.time >= s.timestamp - 0.6 }), i > 0 {
                         recentRaw.removeFirst(i)
                     }
                     if route == .game, mode == .eyes, let target = lookedAtMeteor {
                         adapter?.learn(raw: raw, target: target, pose: pose, time: s.timestamp, weight: Self.meteorLabelWeight)
+                    }
+                    if route == .pursuit, mode == .eyes, let p = pursuit, p.phase == .running, !p.waitingForFace {
+                        // The warm-up's dot teaches the aim the way a meteor being burned does, but only while the
+                        // model's own aim travels with the dot: resting eyes or a glance elsewhere teach nothing.
+                        let target = p.target(host: s.timestamp)
+                        if followGate.add(t: s.timestamp, aim: raw, target: target),
+                           adapter?.learn(raw: raw, target: target, pose: pose, time: s.timestamp,
+                                          weight: Self.meteorLabelWeight) == true {
+                            p.taught += 1
+                        }
                     }
                     aimCorrection = adaptAim ? (adapter?.correction(pose: pose) ?? .zero) : .zero
                     gaze = .point(filter.filter(raw + aimCorrection, t: s.timestamp))
@@ -421,7 +489,7 @@ final class AppModel: ObservableObject {
                 if case .point(let p) = gaze { collectedGaze.append(p) }
                 distances.append(f.distance)
                 logger.sample(kind: c.kind, time: s.timestamp, target: c.target, gaze: gazePoint, f: f, blink: s.blink, hold: false,
-                              processingMs: s.processingMs, light: s.light)
+                              processingMs: s.processingMs, light: s.light, raw: rawAim, alt: altAim)
             }
         } else {
             gaze = .lost
@@ -429,16 +497,16 @@ final class AppModel: ObservableObject {
         if route == .game, mode == .eyes, let f = s.features {
             logger.sample(kind: "frame", time: s.timestamp, target: lookedAtMeteor, gaze: gazePoint, f: f,
                           blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
-                          correction: adapter == nil ? nil : aimCorrection, light: s.light)
+                          correction: adapter == nil ? nil : aimCorrection, light: s.light, raw: rawAim, alt: altAim)
         }
         if route == .rhythm, let f = s.features {
             logger.sample(kind: "rhythm_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
                           blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
-                          correction: adapter == nil ? nil : aimCorrection, locked: rhythm?.lock.locked, light: s.light)
+                          correction: adapter == nil ? nil : aimCorrection, locked: rhythm?.lock.locked, light: s.light, raw: rawAim, alt: altAim)
         }
         if route == .winkTest, let f = s.features {
             logger.sample(kind: "wink_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
-                          blink: s.blink, hold: false, processingMs: s.processingMs, light: s.light)
+                          blink: s.blink, hold: false, processingMs: s.processingMs, light: s.light, raw: rawAim, alt: altAim)
         }
         if let f = s.features {
             // The eyes' distance to the screen (cm), smoothed: the probe lays its field out at it.
@@ -453,7 +521,7 @@ final class AppModel: ObservableObject {
                 let t = p.time(host: host)
                 let target = p.gliderPosition(host: host) ?? p.plan.scheduledTarget(at: t).map { p.targetPosition($0.index) }
                 logger.sample(kind: "probe_frame", time: host, target: target, gaze: probeGazePoint, f: f, blink: s.blink,
-                              hold: blink.freezeGaze, processingMs: s.processingMs, light: s.light)
+                              hold: blink.freezeGaze, processingMs: s.processingMs, light: s.light, raw: rawAim, alt: altAim)
             }
         }
         if route == .pursuit, mode == .eyes, let p = pursuit, p.phase == .running {
@@ -463,7 +531,7 @@ final class AppModel: ObservableObject {
             if let f = s.features {
                 logger.sample(kind: "pursuit_frame", time: s.timestamp, target: target ?? p.target(host: s.timestamp),
                               gaze: gazePoint, f: f, blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
-                              correction: adapter == nil ? nil : aimCorrection, light: s.light)
+                              correction: adapter == nil ? nil : aimCorrection, light: s.light, raw: rawAim, alt: altAim)
             }
         }
         // The wink test draws the eyelids live, so it gets the numbers 30 times a second.
@@ -788,6 +856,7 @@ final class AppModel: ObservableObject {
                                targetScale: targetScale, now: now)
         pursuit = p
         pursuitTouch = nil
+        followGate.reset()
         logger.pursuitStart(time: p.startHost, radiusPt: p.radiusPt, durationSec: p.plan.durationSec)
         pursuitTimer?.invalidate()
         let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.pursuitTick() }
@@ -823,7 +892,8 @@ final class AppModel: ObservableObject {
                                              durationSec: p.plan.durationSec, byEye: p.byEye,
                                              calibrationErrorCm: p.byEye ? report?.meanErrorCm : nil,
                                              tally: p.tally, ptPerCm: ptPerCm)
-        logger.pursuitEnd(time: now, onTarget: p.tally.all.share, meanDistancePt: p.tally.meanDistancePt)
+        logger.pursuitEnd(time: now, onTarget: p.tally.all.share, meanDistancePt: p.tally.meanDistancePt,
+                          taught: p.byEye ? p.taught : nil)
         keep(summary)
         route = .menu
         lastSummary = summary
@@ -970,12 +1040,10 @@ final class AppModel: ObservableObject {
     /// Starts a calibration; «Играть» on its result then leads to `next`.
     func beginCalibration(then next: Route = .game) {
         afterCalibration = next
-        model = nil
-        adapter = nil
-        aimCorrection = .zero
-        resetGazeFilters()
+        dropCalibration()
         calibrationSet = []
         checkSet = []
+        checkFeatures = []
         checkPoses = []
         distances = []
         report = nil
@@ -1013,25 +1081,50 @@ final class AppModel: ObservableObject {
             calibrationSet.append((c.target, collectedFeatures))
         } else {
             checkSet.append((c.target, collectedGaze))
+            checkFeatures.append((c.target, collectedFeatures))
             checkPoses.append(HeadPose.mean(collectedFeatures) ?? HeadPose(pitch: 0, yaw: 0))
         }
         return true
     }
 
-    /// Fits the ridge model on the 9 calibration dots, then moves to the check screen.
-    func finishCalibration() {
+    /// Fits both gaze models on the 9 calibration dots, then moves to the check screen. `screen`: the size of the
+    /// screen the dots were shown on (screen pt). The head-frame model plays the check when it could be fitted.
+    func finishCalibration(screen: Vec2) {
         var X: [[Double]] = [], Y: [Vec2] = []
-        for (t, fs) in calibrationSet { for f in fs { X.append(f.vector(featureSet)); Y.append(t) } }
-        model = RidgeModel.fit(features: X, targets: Y, lambda: 0.01, featureSet: featureSet.rawValue)
-        resetGazeFilters()
-        // The adapter's tilt terms are measured from the grip the model was fitted at.
-        let calibrated = calibrationSet.flatMap { $0.features }
-        let distanceM = calibrated.isEmpty ? 0.28 : calibrated.map(\.distance).reduce(0, +) / Double(calibrated.count)
-        adapter = model == nil ? nil : HeadPose.mean(calibrated).map { GazeAdapter(reference: $0, distanceM: distanceM) }
+        var samples: [(target: Vec2, features: GazeFeatures)] = []
+        for (t, fs) in calibrationSet {
+            for f in fs {
+                X.append(f.vector(featureSet))
+                Y.append(t)
+                samples.append((t, f))
+            }
+        }
+        let first = RidgeModel.fit(features: X, targets: Y, lambda: 0.01, featureSet: featureSet.rawValue)
+        let geometry = ScreenGeometry(size: screen, ptPerMetre: ptPerCm * 100, orientation: Self.screenOrientation)
+        fitted = (HeadGazeModel.fit(samples: samples, screen: geometry), first)
+        modelCheck = (nil, nil)
+        if let head = fitted.head {
+            play(GazeModel.head(head))
+        } else {
+            play(first.map { GazeModel.screen($0) })
+        }
         route = model == nil ? .menu : .check
     }
 
     func finishCheck() {
+        // The check dots choose the model: the head-frame one plays on, unless it misses them clearly more than the
+        // first model does at this grip.
+        let pick = GazeModel.choose(head: fitted.head, screen: fitted.screen, check: checkFeatures)
+        modelCheck = (pick.headMiss, pick.screenMiss)
+        if let chosen = pick.model, chosen.name != model?.name {
+            play(chosen)
+            // The other model played the check, so the report is made of the chosen model's own aim on the same
+            // frames (before the filter).
+            checkSet = checkFeatures.map { d in
+                (target: d.target, predictions: d.features.compactMap { chosen.predict($0) })
+            }
+        }
+        logModel()
         let distCm = distances.isEmpty ? 30 : distances.reduce(0, +) / Double(distances.count) * 100
         report = Metrics.report(samples: checkSet, ptPerCm: ptPerCm, viewingDistanceCm: distCm)
         // The report above is the model's own accuracy. Then the check dots warm the adapter up: they say where the

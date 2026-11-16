@@ -77,6 +77,31 @@ public struct PursuitPlan: Equatable, Sendable {
     }
 }
 
+/// The warm-up's clock: host time in, warm-up seconds out. It can be held while the camera does not see the face,
+/// so the minute does not run without the player: the target waits where it is and goes on when the face is back.
+public struct PursuitClock: Sendable, Equatable {
+    /// Host time of the warm-up's second 0; it moves later by every hold.
+    public private(set) var startHost: Double
+    public private(set) var heldSince: Double?
+
+    public init(startHost: Double) { self.startHost = startHost }
+
+    public var isHeld: Bool { heldSince != nil }
+
+    /// Warm-up seconds at a host time (negative before the start). Stands still during a hold.
+    public func time(host: Double) -> Double { (heldSince.map { min($0, host) } ?? host) - startHost }
+
+    public mutating func hold(host: Double) {
+        if heldSince == nil { heldSince = host }
+    }
+
+    public mutating func resume(host: Double) {
+        guard let since = heldSince else { return }
+        startHost += max(0, host - since)
+        heldSince = nil
+    }
+}
+
 /// Counts the frames of one warm-up: how many had the gaze near the target, and how far it was on average.
 public struct PursuitTally: Equatable, Sendable {
     public struct Count: Equatable, Sendable {

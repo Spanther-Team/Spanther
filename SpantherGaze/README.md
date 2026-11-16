@@ -38,6 +38,17 @@ Unit tests: `cd GazeCore && swift test` (Mac or Linux). Camera code only works o
 6. 13 new dots measure mean error and jitter. The hit zone is drawn radius + that error, clamped to 30–115 pt.
 7. The aim adapter (`GazeAdapter` in `GazeCore/Adapt.swift`) adds a small correction to the ridge prediction, before the filter, so the aim stays on target when the phone is held at another tilt than at calibration. See below.
 
+## Head-frame gaze model (the phone moved or tilted)
+
+Added after the warm-up of 16 November 2026 (iPhone 13), where the figure of eight scored 24%. In that session's CSV the phone's tilt drifted 14 degrees in a minute and the ridge model's vertical aim moved about 85 pt per degree of it: the model reads the rays' hits on the screen, a hit is the head's own direction plus the eyes' turn, and the calibration's gain (ARKit sees about a half of the eyes' turn across and a third up and down) scales the head's part up too.
+
+- `HeadGazeModel` (`GazeCore/HeadGaze.swift`) is fitted inside the head instead: a linear map from the eyes' measured direction in face space (the `lookAtPoint` ray, two angles) to the direction they must really have to see each calibration dot from where the eyes were. A frame is answered by geometry: the corrected direction, turned by the head's rotation, cast from between the eyes onto the screen's plane. No pupils and no squares in it.
+- Both models are fitted at every calibration. The head-frame one plays unless its mean miss on the 13 check dots is more than 1.25 times the ridge model's (`GazeModel.choose`). The other model's aim is written on every frame (`alt_x_pt`, `alt_y_pt`) next to the playing model's own (`raw_x_pt`, `raw_y_pt`), and a `model` row says which one plays and both misses, so one session compares them. Sample rows also carry the point between the eyes and the look angles (`eye_*_m`, `look_*_rad`), enough to fit the model again offline.
+- Under the head-frame model the aim adapter starts with no assumed follow of the head (`followPitch` and `followYaw` 0); it still learns a bias and slopes from labels.
+- Warm-up only: while the model's own aim travels with the dot (`FollowGate`: correlation and travel over the last 1.2 s), the dot teaches the adapter like a meteor being burned. So the warm-up's score now includes that help; the probe gets none. `pursuit_end` rows count the frames taught (`taught`).
+- Warm-up: after 0.5 s without a face the dot and the minute wait, with a hint, and go on with the first frame that has the face.
+- Not confirmed on a phone yet. It is checked on simulated geometry only (`HeadGazeTests`: nods, turns, nearer, further, the phone moved aside), because older CSVs do not hold the eyes' position.
+
 ## Aim adapter (the phone held differently)
 
 In the first iPhone sessions the aim slid when the phone's tilt changed after calibration. The ridge model is fitted at one grip, and the lookAt hits and pupil offsets it reads shift a little with the head's angle to the camera. The model itself is unchanged; on top of it:

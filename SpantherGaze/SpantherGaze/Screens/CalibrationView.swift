@@ -118,7 +118,7 @@ struct CalibrationView: View {
                 try? await Task.sleep(nanoseconds: 600_000_000)
             }
         }
-        if kind == .calibration { app.finishCalibration() } else { app.finishCheck() }
+        if kind == .calibration { app.finishCalibration(screen: size) } else { app.finishCheck() }
     }
 }
 

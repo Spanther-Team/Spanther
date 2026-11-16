@@ -97,17 +97,19 @@ final class FaceTracker: NSObject, ARSessionDelegate {
         config.maximumNumberOfTrackedFaces = 1
         // The light estimate is logged on every frame, so a session played in the dark can be told apart.
         config.isLightEstimationEnabled = true
-        // CLAUDE.md asks for 60 fps, and the architecture proposal for the smallest format that gives it: fewer
-        // pixels for ARKit, and Vision only ever sees the face's square. Without a 60 fps format, the first of the
-        // fastest. Night vision takes the first of the slowest instead (30 fps on the iPhone 13): a frame can then be
-        // exposed twice as long, and in a dark room the light from the screen is all the camera gets. The light
-        // estimate stays on in every mode: the session CSV, the calibration's "too dark" hint and the clinic's
-        // quality gate read it.
+        // CLAUDE.md asks for 60 fps: the first of the fastest formats, which on the iPhone 13 is the whole sensor
+        // (1440x1080). The smallest 60 fps format (1280x720) was tried to save pixels, but it is the sensor's
+        // picture cut to 16:9, a quarter less from top to bottom with the phone on its side, and at 23 cm a face
+        // about fills that height: in the warm-up of 2026-11-16 ARKit lost the face for 13 s at that distance, and
+        // the frame rate was 30 all the same (the phone was hot). Whether the whole sensor loses the face less is
+        // a guess until a session on the phone shows it; the `tracking` row of each CSV names the format. Vision
+        // only ever sees the face's square, so the larger picture costs it nothing. Night vision takes the first of
+        // the slowest instead (30 fps on the iPhone 13): a frame can then be exposed twice as long, and in a dark
+        // room the light from the screen is all the camera gets. The light estimate stays on in every mode: the
+        // session CSV, the calibration's "too dark" hint and the clinic's quality gate read it.
         let formats = ARFaceTrackingConfiguration.supportedVideoFormats
-        func pixels(_ f: ARConfiguration.VideoFormat) -> CGFloat { f.imageResolution.width * f.imageResolution.height }
-        let fast = formats.filter { $0.framesPerSecond >= 60 }
         let chosen = night ? formats.min(by: { $0.framesPerSecond < $1.framesPerSecond })
-            : (fast.min(by: { pixels($0) < pixels($1) }) ?? formats.max(by: { $0.framesPerSecond < $1.framesPerSecond }))
+            : formats.max(by: { $0.framesPerSecond < $1.framesPerSecond })
         if let chosen { config.videoFormat = chosen }
         info.offered = formats.isEmpty ? "-" : formats.map { Self.describe($0) }.joined(separator: " ")
         info.format = Self.describe(config.videoFormat)
