@@ -13,7 +13,7 @@ struct GameView: View {
                     // Opaque: the scene draws the paper and the garden itself (one renderer for the screen).
                     SpriteView(scene: scene, options: [.ignoresSiblingOrder])
                     HUDView(hud: scene.hud, paused: $paused, musicOn: $app.musicOn, onQuit: { app.route = .menu },
-                            onRecalibrate: { app.beginCalibration() },
+                            onRecalibrate: { app.beginCalibration(then: .game) },
                             canRecalibrate: app.mode == .eyes, touchMode: app.mode == .touch, decoysOn: scene.decoysOn,
                             onEnergyTap: { [weak scene] in scene?.reloadTap() })
                 }

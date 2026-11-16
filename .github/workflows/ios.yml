@@ -165,7 +165,23 @@ jobs:
           fail() { echo "FAIL $1" >> "$OUT/checks.txt"; }
           : > "$OUT/checks.txt"
 
-          xcrun simctl launch --stdout="$OUT/menu.stdout.log" --stderr="$OUT/menu.stderr.log" "$UDID" "$BID"
+          # A plain launch stops at the start screen (privacy and the camera); the Simulator cannot track a face,
+          # so it shows the finger-only variant. -SpantherGate holds it in each camera state for the shots below,
+          # and -SpantherGate pass goes straight to the menu.
+          xcrun simctl launch --stdout="$OUT/gate.stdout.log" --stderr="$OUT/gate.stderr.log" "$UDID" "$BID"
+          sleep 8; shot 00-gate
+          if running; then pass "start screen: app running"; else fail "start screen: app not running"; fi
+          xcrun simctl terminate "$UDID" "$BID" || true
+          for g in ask:ru denied:ru denied:kk ask:en restricted:kk allowed:en; do
+            state=${g%%:*}; lang=${g##*:}
+            xcrun simctl launch --stdout="$OUT/gate-$state-$lang.stdout.log" --stderr="$OUT/gate-$state-$lang.stderr.log" \
+              "$UDID" "$BID" -SpantherGate "$state" -SpantherGateLanguage "$lang"
+            sleep 6; shot "gate-$state-$lang"
+            if running; then pass "start screen $state $lang: app running"; else fail "start screen $state $lang: app not running"; fi
+            xcrun simctl terminate "$UDID" "$BID" || true
+          done
+
+          xcrun simctl launch --stdout="$OUT/menu.stdout.log" --stderr="$OUT/menu.stderr.log" "$UDID" "$BID" -SpantherGate pass
           sleep 8; shot 00-menu
           if running; then pass "menu: app running"; else fail "menu: app not running"; fi
           xcrun simctl terminate "$UDID" "$BID" || true
@@ -475,7 +491,19 @@ jobs:
           if [ -z "$SE" ]; then echo "NOTE no iPhone SE simulator on this runner" >> "$OUT/checks.txt"; exit 0; fi
           xcrun simctl bootstatus "$SE" -b
           xcrun simctl install "$SE" build/Debug-iphonesimulator/SpantherGaze.app
-          xcrun simctl launch "$SE" "$BID"
+          # The start screen in its longest language and state, then the menu.
+          xcrun simctl launch "$SE" "$BID" -SpantherGate denied -SpantherGateLanguage kk
+          sleep 6
+          xcrun simctl io "$SE" screenshot --type=png "$OUT/tmp.png" >/dev/null 2>&1 \
+            && sips -s format jpeg -s formatOptions 80 -Z 1200 "$OUT/tmp.png" --out "$OUT/gate-denied-kk-se.jpg" >/dev/null 2>&1
+          rm -f "$OUT/tmp.png"
+          if xcrun simctl spawn "$SE" launchctl list | grep -q "UIKitApplication:$BID"; then
+            echo "PASS start screen on iPhone SE: app running" >> "$OUT/checks.txt"
+          else
+            echo "FAIL start screen on iPhone SE: app not running" >> "$OUT/checks.txt"
+          fi
+          xcrun simctl terminate "$SE" "$BID" || true
+          xcrun simctl launch "$SE" "$BID" -SpantherGate pass
           sleep 8
           xcrun simctl io "$SE" screenshot --type=png "$OUT/tmp.png" >/dev/null 2>&1 \
             && sips -s format jpeg -s formatOptions 80 -Z 1200 "$OUT/tmp.png" --out "$OUT/00-menu-se.jpg" >/dev/null 2>&1

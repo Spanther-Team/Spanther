@@ -4,6 +4,7 @@ import SwiftUI
 struct SpantherGazeApp: App {
     @StateObject private var app = AppModel()
     @StateObject private var updateGate = UpdateGate()
+    @StateObject private var startGate = StartGate()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -12,6 +13,10 @@ struct SpantherGazeApp: App {
                 // While the App Store has a newer version, the app opens only the update screen.
                 if let version = updateGate.requiredVersion {
                     UpdateRequiredView(version: version)
+                } else if !startGate.passed {
+                    // Privacy and the camera first, at every launch. Face tracking starts only behind it, so the
+                    // system's camera question comes from the start screen's button and nowhere else.
+                    StartGateView()
                 } else {
                     RootView()
                         .environmentObject(app)
@@ -19,10 +24,13 @@ struct SpantherGazeApp: App {
                         .onAppear {
                             app.startTracking()
                             UIApplication.shared.isIdleTimerDisabled = true
+                            // The session's one calibration, before the menu.
+                            app.openSession()
                         }
                 }
             }
             .environmentObject(updateGate)
+            .environmentObject(startGate)
             .statusBarHidden()
             .persistentSystemOverlays(.hidden)
             .onAppear { updateGate.check() }
@@ -35,7 +43,11 @@ struct SpantherGazeApp: App {
         }
         .onChange(of: scenePhase) { phase in
             app.scenePhaseChanged(active: phase == .active && updateGate.requiredVersion == nil)
-            if phase == .active { updateGate.check() }
+            if phase == .active {
+                updateGate.check()
+                // Back from Settings with the camera allowed: the start screen goes on by itself.
+                startGate.refresh()
+            }
         }
     }
 }

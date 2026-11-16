@@ -81,10 +81,21 @@ struct MenuView: View {
             }
             // The name keeps its whole width; the sessions button takes what is left.
             .layoutPriority(1)
-            // The child's sessions, with the code they are saved under; just the icon where the row is narrow.
+            // A new calibration, and the child's sessions with the code they are saved under; just the icons where
+            // the row is narrow.
             ViewThatFits(in: .horizontal) {
-                sessionsButton(withTitle: true)
-                sessionsButton(withTitle: false)
+                HStack(spacing: 12) {
+                    calibrationButton(withTitle: true)
+                    sessionsButton(withTitle: true)
+                }
+                HStack(spacing: 12) {
+                    calibrationButton(withTitle: false)
+                    sessionsButton(withTitle: true)
+                }
+                HStack(spacing: 12) {
+                    calibrationButton(withTitle: false)
+                    sessionsButton(withTitle: false)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             // The clinic: «Кто играет?», the session's probe, and behind Face ID the profiles and charts.
@@ -106,6 +117,29 @@ struct MenuView: View {
                     .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
             }
             .accessibilityLabel("Настройки")
+        }
+    }
+
+    /// A new calibration for the session, when the player sits or holds the phone differently. Every mode plays on
+    /// the session's one calibration (`AppModel.calibration`); without one it says so in vermilion. Hidden where the
+    /// iPhone cannot track a face.
+    @ViewBuilder private func calibrationButton(withTitle: Bool) -> some View {
+        if app.eyeTrackingSupported {
+            let has = app.calibration != nil
+            Button { app.beginCalibration(then: .menu) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "scope")
+                    if withTitle { Text(has ? "Перекалибровать" : "Откалибровать").lineLimit(1) }
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(has ? Atlas.ink : Atlas.vermilion)
+                .padding(.horizontal, 12)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(Atlas.paper.opacity(0.88), in: Capsule())
+                .overlay(Capsule().stroke(has ? Atlas.ink.opacity(0.14) : Atlas.vermilion.opacity(0.5), lineWidth: 1))
+                .fixedSize()
+            }
+            .accessibilityLabel(has ? "Перекалибровать" : "Откалибровать")
         }
     }
 
@@ -170,10 +204,7 @@ struct MenuView: View {
               : "Держи взгляд на метеорите, пока он не сгорит. Кончилась энергия? Моргни 3\u{00A0}раза.",
               art: { MeteorVignette() },
               actions: {
-                  Button {
-                      app.mode = .eyes
-                      app.beginCalibration()
-                  } label: { buttonText("Играть глазами") }
+                  Button { app.playMeteorsByEye() } label: { buttonText("Играть глазами") }
                       .buttonStyle(AtlasPrimaryButton())
                       .disabled(!app.eyeTrackingSupported)
                   fingerButton("Играть пальцем") {
@@ -204,20 +235,8 @@ struct MenuView: View {
               })
     }
 
+    /// A refused camera never gets this far: the start screen keeps the menu locked until it is allowed.
     @ViewBuilder private var warnings: some View {
-        if app.eyeTrackingSupported && app.cameraDenied {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Нет доступа к камере, поэтому игра не видит взгляд. Разреши камеру в настройках и открой игру заново.")
-                    .font(Atlas.caption)
-                    .foregroundStyle(Atlas.vermilion)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Открыть настройки") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                }
-                .font(Atlas.caption.bold())
-                .foregroundStyle(Atlas.ink)
-            }
-        }
         if !app.eyeTrackingSupported {
             Text("Этот iPhone не поддерживает отслеживание лица (нужен TrueDepth или чип A12 и новее). Доступна игра пальцем.")
                 .font(Atlas.caption)

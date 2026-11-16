@@ -23,6 +23,27 @@ enum Route: Equatable {
 
 enum ControlMode { case eyes, touch }
 
+/// The session's one calibration (`AppModel.calibration`): the fitted gaze models, how well the one that plays hit
+/// the check dots, the grip it was made at, and whose it is.
+struct SessionCalibration {
+    /// The model that plays, and the other fit, whose aim is logged next to it.
+    let model: GazeModel
+    let shadow: GazeModel?
+    let head: HeadGazeModel?
+    let screen: RidgeModel?
+    /// Both models' mean miss on the check dots (screen pt).
+    let headMissPt: Double?
+    let screenMissPt: Double?
+    /// The check dots' accuracy of the model that plays.
+    let report: AccuracyReport
+    /// The mean head pose and distance (m) of the calibration's frames: the aim adapter measures tilt from them.
+    let reference: HeadPose?
+    let distanceM: Double
+    /// The child picked on «Кто играет?» when it was made (nil: nobody was picked), and when.
+    let childID: UUID?
+    let madeAt: Date
+}
+
 /// Live tracking numbers for the debug overlay, refreshed about 10 times a second.
 final class TrackingStatus: ObservableObject {
     @Published var fps = 0.0
@@ -118,7 +139,6 @@ final class AppModel: ObservableObject {
             guard nightVision != oldValue else { return }
             UserDefaults.standard.set(nightVision, forKey: "nightVision")
             dropCalibration()
-            report = nil
             if FaceTracker.isSupported { tracker.setNightVision(nightVision) }
             logTracking()
             applyBrightness()
@@ -130,8 +150,9 @@ final class AppModel: ObservableObject {
     private var active = true
     /// The screen brightness before night vision raised it, to give back on the menu or in the background.
     private var savedBrightness: CGFloat?
-    /// Where «Играть» on the calibration result leads.
-    private(set) var afterCalibration: Route = .game
+    /// Where the calibration's result leads (`continueAfterCalibration`): the menu after the session's first
+    /// calibration and after «Перекалибровать», otherwise the mode or screen that asked for it.
+    private(set) var afterCalibration: Route = .menu
 
     let status = TrackingStatus()
     let tracker = FaceTracker()
@@ -155,6 +176,17 @@ final class AppModel: ObservableObject {
     private var fitted: (head: HeadGazeModel?, screen: RidgeModel?) = (nil, nil)
     /// Both models' mean miss on the check dots (screen pt), for the session CSV.
     private var modelCheck: (headMissPt: Double?, screenMissPt: Double?) = (nil, nil)
+    /// The session's one calibration, once its check dots are done. Every mode plays on it: the meteors, the rhythm
+    /// mode, the warm-up and the clinic's probe. It is made right after the start screen (`openSession`) and again
+    /// only when the player asks («Перекалибровать» on the menu, «Калибровка» in the meteors' pause) or another
+    /// child takes the phone; night vision drops it, since the model then reads other features. The fields above
+    /// are what the frames are read with now: this one's, or a new calibration's while it is being made.
+    @Published private(set) var calibration: SessionCalibration?
+    /// While a new calibration is being made: what the aim had learned on the session's calibration, and its CSV,
+    /// so that leaving the new one before its end brings both back.
+    private var stash: (adapter: GazeAdapter?, logger: SessionLogger)?
+    /// The grip of the calibration being fitted: the mean head pose and distance (m) of its frames.
+    private var grip: (reference: HeadPose?, distanceM: Double) = (nil, 0.28)
     private var filter = OneEuroFilter2D()
     /// The probe's gaze (screen pt): the model's own prediction, filtered on its own, without the aim correction the
     /// games teach and with no point held over a blink or a stray frame. Nil when there is no fresh look this frame.
@@ -269,21 +301,34 @@ final class AppModel: ObservableObject {
 
     /// The child picked on «Кто играет?»: the plays from now on are saved under their code.
     /// Another child takes the phone: the last child's calibration and aim learning do not fit their eyes, and their
-    /// frames must not go into this child's CSV. The next probe or game asks for a new calibration.
+    /// frames must not go into this child's CSV. So the calibration is dropped and the new child's own one starts
+    /// at once, with a new CSV; its result leads back here.
     func pick(child id: UUID) {
         let changed = clinic.playingID != id
         clinic.playingID = id
         if let c = clinic.record(id) { childCode = c.child.code }
         guard changed else { return }
         dropCalibration()
-        report = nil
         gaze = .lost
-        logger = SessionLogger()
-        logTracking()
+        if eyeTrackingSupported, autoplay == nil {
+            beginCalibration(then: route == .clinic ? .clinic : .menu)
+        } else {
+            logger = SessionLogger()
+            logTracking()
+        }
     }
 
-    /// Forgets the calibration: both fitted models and what the aim adapter learned on top.
+    /// Forgets the session's calibration and everything learned on it: another child, or night vision switched.
+    /// The next eye mode calibrates first.
     private func dropCalibration() {
+        calibration = nil
+        stash = nil
+        report = nil
+        clearLive()
+    }
+
+    /// Clears the models the frames are read with: a new calibration is being made, or there is none.
+    private func clearLive() {
         model = nil
         shadowModel = nil
         fitted = (nil, nil)
@@ -306,8 +351,6 @@ final class AppModel: ObservableObject {
         recentRaw = []
         resetGazeFilters()
         // The adapter's tilt terms are measured from the grip the model was fitted at.
-        let calibrated = calibrationSet.flatMap { $0.features }
-        let distanceM = calibrated.isEmpty ? 0.28 : calibrated.map(\.distance).reduce(0, +) / Double(calibrated.count)
         var config = GazeAdapterConfig()
         // The head-frame model turns its aim with the head by geometry, so no follow of the head is assumed for it:
         // the adapter starts from no correction and adds only what the labels show.
@@ -315,7 +358,7 @@ final class AppModel: ObservableObject {
             config.followPitch = 0
             config.followYaw = 0
         }
-        adapter = m == nil ? nil : HeadPose.mean(calibrated).map { GazeAdapter(reference: $0, distanceM: distanceM, config: config) }
+        adapter = m == nil ? nil : grip.reference.map { GazeAdapter(reference: $0, distanceM: grip.distanceM, config: config) }
     }
 
     /// Starts the aim filters and the looking-away gate afresh.
@@ -942,7 +985,8 @@ final class AppModel: ObservableObject {
         guard clinic.playing != nil, eyeTrackingSupported || autoplay == "probe" else { return }
         mode = .eyes
         probeOutcome = nil
-        if model == nil, autoplay != "probe" {
+        // The probe measures this child's gaze, so it runs on this child's own calibration only.
+        if autoplay != "probe", model == nil || calibration?.childID != clinic.playingID {
             beginCalibration(then: .probe)
             return
         }
@@ -1037,10 +1081,32 @@ final class AppModel: ObservableObject {
 
     // MARK: calibration
 
-    /// Starts a calibration; «Играть» on its result then leads to `next`.
-    func beginCalibration(then next: Route = .game) {
+    /// The start screen has let the player in: on an iPhone that tracks faces, the session's one calibration comes
+    /// first, and every mode plays on it. The CI bots and the report screenshots go without.
+    func openSession() {
+        guard eyeTrackingSupported, model == nil, route == .menu, autoplay == nil else { return }
+        #if DEBUG
+        guard demoReport == nil else { return }
+        #endif
+        beginCalibration(then: .menu)
+    }
+
+    /// «Играть глазами» on the meteors: on the session's calibration, or after one when there is none yet.
+    func playMeteorsByEye() {
+        mode = .eyes
+        if model == nil {
+            beginCalibration(then: .game)
+        } else {
+            route = .game
+        }
+    }
+
+    /// Starts a calibration; its result then leads to `next` (`continueAfterCalibration`). The session's calibration
+    /// stays in force until the new one has passed its check dots: leaving before that brings it back.
+    func beginCalibration(then next: Route) {
         afterCalibration = next
-        dropCalibration()
+        stash = calibration == nil ? nil : (adapter, logger)
+        clearLive()
         calibrationSet = []
         checkSet = []
         checkFeatures = []
@@ -1065,10 +1131,40 @@ final class AppModel: ObservableObject {
         collectedGaze = []
     }
 
-    /// Camera access was refused in Settings, so face tracking cannot start.
-    var cameraDenied: Bool {
-        let s = AVCaptureDevice.authorizationStatus(for: .video)
-        return s == .denied || s == .restricted
+    /// The calibration was left before its end («Назад», «Отмена», or a fit that failed): the session's calibration
+    /// plays on, with what the aim had learned on it and its CSV. Without one, the eye modes will ask again.
+    func cancelCalibration() {
+        cancelCollecting()
+        if let c = calibration {
+            fitted = (c.head, c.screen)
+            modelCheck = (c.headMissPt, c.screenMissPt)
+            grip = (c.reference, c.distanceM)
+            report = c.report
+            play(c.model)
+            if let s = stash {
+                adapter = s.adapter
+                logger = s.logger
+            }
+        } else {
+            clearLive()
+            report = nil
+        }
+        stash = nil
+        route = afterCalibration == .probe || afterCalibration == .clinic ? .clinic : .menu
+    }
+
+    /// The calibration's result moves on, to where the calibration was asked for.
+    func continueAfterCalibration() {
+        switch afterCalibration {
+        case .rhythm: openRhythm()
+        case .pursuit: openPursuit(byEye: true)
+        case .probe: openProbe()
+        case .game:
+            mode = .eyes
+            route = .game
+        case .clinic: route = .clinic
+        default: route = .menu
+        }
     }
 
     /// Ends collection for one dot. Returns false when too few frames had a face (the dot is repeated).
@@ -1100,6 +1196,9 @@ final class AppModel: ObservableObject {
             }
         }
         let first = RidgeModel.fit(features: X, targets: Y, lambda: 0.01, featureSet: featureSet.rawValue)
+        let calibrated = samples.map { $0.features }
+        grip = (HeadPose.mean(calibrated),
+                calibrated.isEmpty ? 0.28 : calibrated.map(\.distance).reduce(0, +) / Double(calibrated.count))
         let geometry = ScreenGeometry(size: screen, ptPerMetre: ptPerCm * 100, orientation: Self.screenOrientation)
         fitted = (HeadGazeModel.fit(samples: samples, screen: geometry), first)
         modelCheck = (nil, nil)
@@ -1108,7 +1207,12 @@ final class AppModel: ObservableObject {
         } else {
             play(first.map { GazeModel.screen($0) })
         }
-        route = model == nil ? .menu : .check
+        if model == nil {
+            // Nothing could be fitted: the session's calibration, if any, stays.
+            cancelCalibration()
+        } else {
+            route = .check
+        }
     }
 
     func finishCheck() {
@@ -1136,6 +1240,14 @@ final class AppModel: ObservableObject {
             logger.label(time: now, source: "check", target: c.target, raw: mean, pitch: checkPoses[i].pitch,
                          yaw: checkPoses[i].yaw, accepted: ok, correction: adapter?.correction(pose: checkPoses[i]) ?? .zero)
         }
+        // The session's calibration from now on, for every mode.
+        if let m = model, let r = report {
+            calibration = SessionCalibration(model: m, shadow: shadowModel, head: fitted.head, screen: fitted.screen,
+                                             headMissPt: modelCheck.headMissPt, screenMissPt: modelCheck.screenMissPt,
+                                             report: r, reference: grip.reference, distanceM: grip.distanceM,
+                                             childID: clinic.playingID, madeAt: Date())
+        }
+        stash = nil
         route = .result
     }
 
