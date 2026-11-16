@@ -233,7 +233,7 @@ struct MenuView: View {
 
     /// A button's words on one line; they shrink a little on a narrow plate instead of breaking.
     private func buttonText(_ s: String) -> some View {
-        Text(s).lineLimit(1).minimumScaleFactor(0.75).padding(.horizontal, 6)
+        Text(s).lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 12)
     }
 
     /// The small square button that plays the same game by finger.
@@ -383,7 +383,7 @@ private struct SettingsSheet: View {
     /// «на 30% меньше», with the share from balance.json, and the floor under the hit zone.
     private var smallTargetsHint: String {
         let percent = Int(((1 - app.balance.smallTargetScale) * 100).rounded())
-        let floor = SessionHistory.number(app.balance.zoneFloorFactor, 2)
+        let floor = Loc.number(app.balance.zoneFloorFactor, 2)
         return L("Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше {1} промаха калибровки.", percent, floor)
     }
 
