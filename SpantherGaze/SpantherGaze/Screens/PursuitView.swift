@@ -1,5 +1,6 @@
 import QuartzCore
 import SwiftUI
+import UIKit
 
 /// The 60-second warm-up: one dot glides along a horizontal line, then a vertical one, then a figure of eight, and
 /// the player follows it with the eyes (or a finger). A cream page and no garden: only the orb, its ribbon and the
@@ -12,12 +13,22 @@ struct PursuitView: View {
         ZStack {
             GeometryReader { geo in
                 Atlas.paper
-                    .onAppear { app.beginPursuit(screen: Vec2(geo.size.width, geo.size.height)) }
+                    .onAppear { app.beginPursuit(screen: Self.wholeScreen(geo.size)) }
             }
             .ignoresSafeArea()
             if let p = app.pursuit { PursuitPlayView(session: p) }
         }
         .environment(\.colorScheme, .light)
+    }
+
+    /// The warm-up's path is laid out once, when the screen appears, for the whole window: a size given while the
+    /// screen does not have the whole display yet (the safe area only) would leave the path off its middle.
+    private static func wholeScreen(_ s: CGSize) -> Vec2 {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        guard let w = scene?.coordinateSpace.bounds.size, (w.width >= w.height) == (s.width >= s.height) else {
+            return Vec2(Double(s.width), Double(s.height))
+        }
+        return Vec2(Double(max(s.width, w.width)), Double(max(s.height, w.height)))
     }
 }
 

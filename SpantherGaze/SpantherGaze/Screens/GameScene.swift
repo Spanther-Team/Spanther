@@ -97,6 +97,11 @@ final class GameScene: SKScene {
     private var skyNode: SKSpriteNode?
     private var motes: SKEmitterNode?
     private var frameIndex = 0
+    /// The size `start()` laid the play out for; whether the play has had its first result yet (a stone burned or
+    /// landed, a red sign looked at or passed by); and when the scene last took another size before that.
+    private var laidOutFor: CGSize = .zero
+    private var playBegun = false
+    private var resizedAt: TimeInterval?
 
     #if DEBUG
     /// Bot for the Simulator smoke test (see AppModel.autoplay).
@@ -130,7 +135,22 @@ final class GameScene: SKScene {
         sounds?.hold(false)
     }
 
+    // The scene can be shown before it has the whole screen: on a phone SwiftUI first gave it only the safe area
+    // (734 x 372 of 852 x 393 pt), and `.resizeFill` then grew it without laying the play out again, so the sky, the
+    // hill and the play kept to the bottom-left with bare cream on the right and at the top. So until the play's
+    // first result, a new size lays the play out again, once the size has held for a moment (`update`).
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        guard model != nil, !playBegun, size.width > 1, size.height > 1 else { return }
+        if abs(size.width - laidOutFor.width) > 0.5 || abs(size.height - laidOutFor.height) > 0.5 {
+            resizedAt = CACurrentMediaTime()
+        }
+    }
+
     func start() {
+        laidOutFor = size
+        playBegun = false
+        resizedAt = nil
         world.removeAllChildren()
         stones.removeAll()
         signs.removeAll()
@@ -297,6 +317,12 @@ final class GameScene: SKScene {
     private func sk(_ p: Vec2) -> CGPoint { CGPoint(x: p.x, y: size.height - p.y) }
 
     override func update(_ currentTime: TimeInterval) {
+        // The scene took another size before the play's first result (`didChangeSize`): once that size has held for
+        // 0.15 s, the play is laid out again for it, from the start.
+        if let t = resizedAt, CACurrentMediaTime() - t > 0.15 {
+            resizedAt = nil
+            if !playBegun, size != laidOutFor { start() }
+        }
         // A paused scene skips frames: the first frame after a pause must not jump by the whole pause.
         let dt = lastTime == 0 ? 0 : min(0.1, currentTime - lastTime)
         lastTime = currentTime
@@ -322,6 +348,10 @@ final class GameScene: SKScene {
         let held = botGaze == nil && !useTouch && gazeHeld()
 
         for e in m.update(dt: dt, gaze: gaze, held: held) {
+            switch e {
+            case .destroyed, .hitEarth, .decoyLooked, .decoyPassed: playBegun = true
+            default: break
+            }
             switch e {
             case .spawned(let a):
                 if let art, let baked = factory?.take(radius: a.radius) {

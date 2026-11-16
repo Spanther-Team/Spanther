@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- App Store Connect refuses builds that use required-reason APIs without declaring them here.
-	     UserDefaults keeps the night-vision switch, the chosen rhythm track and level, and each child's observatory stars (reason CA92.1:
+	     UserDefaults keeps the night-vision switch, the chosen rhythm track and level, each child's observatory stars and the last calibration's fitted numbers (reason CA92.1:
 	     read and write data only this app can access). Nothing is collected and nothing tracks the user. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
