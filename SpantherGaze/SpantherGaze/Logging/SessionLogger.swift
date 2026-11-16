@@ -29,6 +29,16 @@ final class SessionLogger {
         // «Мелкие цели» and the red signs: the scale of the targets and the smallest hit zone of a meteor play
         // (`game` rows), and whether a red sign was looked at (`decoy` rows: 1 an error, 0 passed by).
         case targetScale = "target_scale", zoneFloor = "zone_floor_pt", decoyLooked = "decoy_looked"
+        // The head-frame gaze model. Sample rows: the point between the eyes (camera space, metres) and the eyes'
+        // measured direction inside the head (radians), from which that model can be fitted again offline with the
+        // row's yaw, pitch and roll; the playing model's aim before the correction and the filter, and the other
+        // model's aim on the same frame (screen pt). `model` rows: which model plays (head or screen) and both
+        // models' mean miss on the check dots (screen pt).
+        case eyeX = "eye_x_m", eyeY = "eye_y_m", eyeZ = "eye_z_m", lookAz = "look_az_rad", lookEl = "look_el_rad"
+        case rawX = "raw_x_pt", rawY = "raw_y_pt", altX = "alt_x_pt", altY = "alt_y_pt"
+        case model, checkHead = "check_head_pt", checkScreen = "check_screen_pt"
+        // `pursuit_end` rows: the frames on which the warm-up's dot taught the aim (the eyes were following it).
+        case taught
     }
 
     /// One CSV line. Cells that are not set stay empty. Built one cell at a time: long array literals of
@@ -81,10 +91,23 @@ final class SessionLogger {
     /// `correction`: what the aim adapter added to the model's prediction on this frame (screen pt); the gaze
     /// column has it in. In `frame` rows the target is the meteor the game took as looked at, if any.
     /// `locked`: in `rhythm_frame` rows, the note the aim is locked on (-1 the start star, empty none).
+    /// `raw`: the playing model's aim on this frame before the correction and the filter; `alt`: the aim of the
+    /// fitted model that does not play (screen pt). Empty inside a blink, where neither is asked.
     func sample(kind: String, time: Double, target: Vec2?, gaze: Vec2?, f: GazeFeatures,
                 blink: (left: Double, right: Double)?, hold: Bool, processingMs: Double? = nil, correction: Vec2? = nil,
-                locked: Int? = nil, light: Double? = nil) {
+                locked: Int? = nil, light: Double? = nil, raw: Vec2? = nil, alt: Vec2? = nil) {
         var r = Row(kind: kind, time: time)
+        r.set(.rawX, raw?.x)
+        r.set(.rawY, raw?.y)
+        r.set(.altX, alt?.x)
+        r.set(.altY, alt?.y)
+        if let h = f.head {
+            r.set(.eyeX, h.origin.x)
+            r.set(.eyeY, h.origin.y)
+            r.set(.eyeZ, h.origin.z)
+            r.set(.lookAz, h.lookAngles.x)
+            r.set(.lookEl, h.lookAngles.y)
+        }
         r.set(.locked, locked)
         r.set(.light, light)
         r.set(.corrX, correction?.x)
@@ -128,6 +151,17 @@ final class SessionLogger {
         write(r.line)
     }
 
+    /// A `model` row: the gaze model that plays from here on ("head" or "screen") and both models' mean miss on the
+    /// calibration's check dots (screen pt; empty before the check). Written after the check and at the start of
+    /// every later session CSV, so each file says which model made its gaze column.
+    func model(time: Double, name: String, headMissPt: Double?, screenMissPt: Double?) {
+        var r = Row(kind: "model", time: time)
+        r[.model] = name
+        r.set(.checkHead, headMissPt)
+        r.set(.checkScreen, screenMissPt)
+        write(r.line)
+    }
+
     /// One asteroid outcome for the parent report.
     func asteroid(_ a: AsteroidRecord, time: Double) {
         var r = Row(kind: "asteroid", time: time)
@@ -167,7 +201,8 @@ final class SessionLogger {
     /// the gaze counts as on the target, period_s the length of the warm-up. Its frames are `pursuit_frame` sample
     /// rows with the target and the gaze (screen pt), so another radius can be replayed on the same run (CLAUDE.md
     /// rule 7). `pursuit_end`: the share of scored frames on the target (accuracy column, 0...1) and the mean
-    /// distance to it (aim_pt).
+    /// distance to it (aim_pt); by eye also the number of frames on which the dot taught the aim (taught), so a
+    /// score can be read knowing how much of the play the aim was being pulled to the dot.
     func pursuitStart(time: Double, radiusPt: Double, durationSec: Double) {
         var r = Row(kind: "pursuit_start", time: time)
         r.set(.aim, radiusPt)
@@ -175,8 +210,9 @@ final class SessionLogger {
         write(r.line)
     }
 
-    func pursuitEnd(time: Double, onTarget: Double?, meanDistancePt: Double?) {
+    func pursuitEnd(time: Double, onTarget: Double?, meanDistancePt: Double?, taught: Int? = nil) {
         var r = Row(kind: "pursuit_end", time: time)
+        r.set(.taught, taught)
         r.set(.accuracy, onTarget)
         r.set(.aim, meanDistancePt)
         write(r.line)

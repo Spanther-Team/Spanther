@@ -45,6 +45,7 @@ private struct PursuitPlayView: View {
                 .onChanged { v in app.pursuitTouch = Vec2(v.location.x, v.location.y) }
                 .onEnded { _ in app.pursuitTouch = nil })
             if session.phase == .countdown { intro }
+            if session.waitingForFace { faceHint }
             Button { app.route = .menu } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 17, weight: .semibold))
@@ -81,6 +82,24 @@ private struct PursuitPlayView: View {
                 .frame(maxWidth: 420)
         }
         .padding(.top, 24)
+        .padding(.bottom, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+
+    /// The camera lost the face in the middle of the minute: the dot waits, and this says how to bring it back.
+    private var faceHint: some View {
+        VStack(spacing: 6) {
+            Spacer()
+            Text("Камера не видит лицо")
+                .font(Atlas.title)
+                .foregroundStyle(Atlas.vermilion)
+            Text("Держи телефон примерно в 30 см от лица и не закрывай камеру пальцем. Точка подождёт.")
+                .font(Atlas.caption)
+                .foregroundStyle(Atlas.inkSoft)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
         .padding(.bottom, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)

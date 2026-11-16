@@ -19,11 +19,12 @@ public struct RidgeModel: Codable, Sendable {
     /// How far past the calibrated range the lookAt hit may go before the player counts as looking away.
     public static let lookingAwayMargin = 1.0
 
-    public func predict(_ x: [Double]) -> Vec2 {
+    /// `clampMargin`: how far past its calibrated range a feature may go, as a share of that range.
+    public func predict(_ x: [Double], clampMargin: Double = RidgeModel.clampMargin) -> Vec2 {
         var px = wx[0], py = wy[0]
         for j in 0..<min(x.count, mean.count) where !x[j].isNaN {
             let span = hi[j] - lo[j]
-            let v = min(max(x[j], lo[j] - Self.clampMargin * span), hi[j] + Self.clampMargin * span)
+            let v = min(max(x[j], lo[j] - clampMargin * span), hi[j] + clampMargin * span)
             let z = (v - mean[j]) / scale[j]
             px += wx[j + 1] * z
             py += wy[j + 1] * z
