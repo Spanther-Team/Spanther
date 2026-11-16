@@ -11,6 +11,24 @@ public struct BalanceConfig: Codable, Sendable {
         public var damage: Int
     }
     public struct HitMargin: Codable, Sendable { public var source: String; public var min: Double; public var max: Double }
+    /// The smallest hit zone by eye: the check screen's measured miss times `perError` plus the spread of the looks
+    /// round each dot times `perJitter`, never over `maxPt`. Below that a look at the very centre of a target often
+    /// lands outside its zone, and the game measures the tracker, not the player. On the check screen of the
+    /// 2026-11-04 phone session (miss 40 pt, spread 21 pt) a circle of 1 × miss + 1.5 × spread round each dot held
+    /// 87% of the looks at it; the earlier floor, 1.25 × miss, held 65%.
+    public struct MinZone: Codable, Sendable {
+        public var perError: Double = 1
+        public var perJitter: Double = 1.5
+        public var maxPt: Double = 120
+        public init() {}
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            perError = try c.decodeIfPresent(Double.self, forKey: .perError) ?? perError
+            perJitter = try c.decodeIfPresent(Double.self, forKey: .perJitter) ?? perJitter
+            maxPt = try c.decodeIfPresent(Double.self, forKey: .maxPt) ?? maxPt
+        }
+    }
     public struct GazeBrake: Codable, Sendable { public var levels1to3: Double; public var later: Double }
     public struct ErrorCap: Codable, Sendable { public var errorPt: Double; public var max: Int }
     /// Adaptation rules from the "Адаптация под ребёнка" section.
@@ -52,10 +70,11 @@ public struct BalanceConfig: Codable, Sendable {
     /// «Мелкие цели»: the drawn size of every target and its hit zone, in both games, times this (0.7 is 30%
     /// smaller). nil: 1. The app passes 1 when the switch is off.
     public var targetScale: Double?
-    /// A scaled hit zone never gets smaller than the calibration's measured miss times this: below that a look at
-    /// the very centre of a target would often land outside its zone, and the game would measure the tracker, not
-    /// the player. nil: 1.25. 0 turns the floor off.
-    public var minZonePerError: Double?
+    /// The floor under every hit zone by eye (`zoneFloor`). nil: the defaults of `MinZone`.
+    public var minZone: MinZone?
+    /// How far a new meteor flies in from the edge before it can be burned (cm on the screen; 0 turns it off). While
+    /// it flies that far it is drawn in a bubble. nil: 1.5.
+    public var spawnShieldCm: Double?
     /// Red signs the player must not look at, in the meteor game. nil: none.
     public var decoys: DecoyConfig?
 
@@ -68,14 +87,18 @@ public struct BalanceConfig: Codable, Sendable {
     public var levelCount: Int { levels ?? 10 }
     /// The small-target scale, kept within reason so a mistuned balance.json cannot make targets vanish or grow.
     public var smallTargetScale: Double { min(1, max(0.4, targetScale ?? 1)) }
-    public var zoneFloorFactor: Double { max(0, minZonePerError ?? 1.25) }
 
-    /// The smallest hit zone (screen pt) for a calibration that missed by `measuredErrorPt` on the check screen.
-    /// 0 with regular targets, where the zone is the full radius plus the miss, and without a measured miss (touch).
-    public func zoneFloor(measuredErrorPt: Double?, scale: Double) -> Double {
-        guard scale < 1, let e = measuredErrorPt, e.isFinite, e > 0 else { return 0 }
-        return zoneFloorFactor * e
+    /// The smallest hit zone (screen pt) by eye, for a calibration that missed by `errorPt` on the check screen with
+    /// `jitterPt` of spread (`MinZone`), with regular and small targets alike. 0 without a measured miss (touch).
+    public func zoneFloor(errorPt: Double?, jitterPt: Double?) -> Double {
+        guard let e = errorPt, e.isFinite, e > 0 else { return 0 }
+        let z = minZone ?? MinZone()
+        let j = jitterPt.map { $0.isFinite ? max(0, $0) : 0 } ?? 0
+        return min(max(0, z.maxPt), max(0, z.perError) * e + max(0, z.perJitter) * j)
     }
+
+    /// `spawnShieldCm` in screen pt, at `ptPerCm` (about 60 on the iPhones the app runs on).
+    public func spawnShieldPt(ptPerCm: Double = 60) -> Double { max(0, spawnShieldCm ?? 1.5) * max(0, ptPerCm) }
     public var rules: Adaptation { adaptation ?? Adaptation() }
     public var lockZone: Double { max(1, lockZoneScale ?? 1.4) }
 

@@ -1,10 +1,10 @@
 {
   "minDwellSec": 0.5,
   "classes": {
-    "S":  { "sizePt": 64,  "dwellSec": 0.5, "travelSec": [6.0, 3.5],  "damage": 1 },
-    "M":  { "sizePt": 100, "dwellSec": 0.8, "travelSec": [7.0, 4.5],  "damage": 1 },
-    "L":  { "sizePt": 150, "dwellSec": 1.2, "travelSec": [8.0, 5.5],  "damage": 2 },
-    "XL": { "sizePt": 220, "dwellSec": 2.0, "travelSec": [10.0, 7.0], "damage": 3 }
+    "S":  { "sizePt": 64,  "dwellSec": 0.5, "travelSec": [5.2, 3.5],  "damage": 1 },
+    "M":  { "sizePt": 100, "dwellSec": 0.8, "travelSec": [6.1, 4.5],  "damage": 1 },
+    "L":  { "sizePt": 150, "dwellSec": 1.2, "travelSec": [7.0, 5.5],  "damage": 2 },
+    "XL": { "sizePt": 220, "dwellSec": 2.0, "travelSec": [8.7, 7.0],  "damage": 3 }
   },
   "hitMarginPt": { "source": "validationMeanError", "min": 30, "max": 115 },
   "dropoutGraceSec": 0.15,
@@ -30,7 +30,8 @@
   "lockZoneScale": 1.4,
 
   "targetScale": 0.7,
-  "minZonePerError": 1.25,
+  "minZone": { "perError": 1.0, "perJitter": 1.5, "maxPt": 120 },
+  "spawnShieldCm": 1.5,
   "decoys": {
     "sizePt": 84,
     "travelSec": [7.0, 5.0],

@@ -71,6 +71,8 @@ final class GameScene: SKScene {
     private var signs: [Int: SignNode] = [:]
     /// Red signs sent in so far: the first one comes with a line that says what to do.
     private var signsSeen = 0
+    /// The bubble's rule has been said in this play (the first look at a stone still in its bubble).
+    private var bubbleExplained = false
     /// The debug aim, a baked ring: ink, or vermilion while it rests on a stone the pool can't pay for.
     private let reticle = SKSpriteNode()
     private var reticleStarved = false
@@ -156,6 +158,7 @@ final class GameScene: SKScene {
         signs.removeAll()
         pops.removeAll()
         signsSeen = 0
+        bubbleExplained = false
         chargingID = nil
         let m = GameModel(config: config, screen: Vec2(size.width, size.height), marginPt: marginPt,
                           targetScale: targetScale, zoneFloorPt: zoneFloorPt, decoys: decoysOn)
@@ -355,7 +358,7 @@ final class GameScene: SKScene {
             switch e {
             case .spawned(let a):
                 if let art, let baked = factory?.take(radius: a.radius) {
-                    let n = StoneNode(baked: baked, art: art, k: CGFloat(m.targetScale))
+                    let n = StoneNode(baked: baked, art: art, k: CGFloat(m.targetScale), shielded: a.isShielded)
                     n.position = sk(a.position)
                     stones[a.id] = n
                     world.addChild(n)
@@ -421,6 +424,10 @@ final class GameScene: SKScene {
         for a in m.asteroids { stones[a.id]?.sync(a, at: sk(a.position), gaze: gazePoint, dt: dt) }
         for s in m.decoys { signs[s.id]?.position = sk(s.position) }
         if !useTouch, botGaze == nil { onLookedAt?(m.asteroids.first { $0.isTargeted }?.position) }
+        if !bubbleExplained, m.asteroids.contains(where: { $0.isTargeted && $0.isShielded }) {
+            bubbleExplained = true
+            notice(L("Метеорит в пузыре: жди, пока пузырь лопнет"), seconds: 3)
+        }
         if hud.needsReload != m.needsReload { hud.needsReload = m.needsReload }
         charge(m)
         for p in pops { p.step(dt: dt) }
@@ -444,9 +451,10 @@ final class GameScene: SKScene {
     }
 
     /// The charge (architecture proposal, "The pop, step by step", 1): while the gaze rests on a stone it can burn, a
-    /// soft rising tone from the stone's side when it lands and a faint rumble rising with the hold.
+    /// soft rising tone from the stone's side when it lands and a faint rumble rising with the hold. A stone still in
+    /// its bubble cannot be burned: no tone, no rumble.
     private func charge(_ m: GameModel) {
-        let holding = m.asteroids.first { $0.isTargeted && !$0.isStarved }
+        let holding = m.asteroids.first { $0.isTargeted && !$0.isStarved && !$0.isShielded }
         if holding?.id != chargingID {
             chargingID = holding?.id
             if let h = holding {

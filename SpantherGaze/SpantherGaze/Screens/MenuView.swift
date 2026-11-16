@@ -383,8 +383,9 @@ private struct SettingsSheet: View {
     /// «на 30% меньше», with the share from balance.json, and the floor under the hit zone.
     private var smallTargetsHint: String {
         let percent = Int(((1 - app.balance.smallTargetScale) * 100).rounded())
-        let floor = Loc.number(app.balance.zoneFloorFactor, 2)
-        return L("Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше {1} промаха калибровки.", percent, floor)
+        let z = app.balance.minZone ?? BalanceConfig.MinZone()
+        return L("Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше, чем промах калибровки × {1} + её разброс × {2}.",
+                 percent, Loc.number(z.perError, 1), Loc.number(z.perJitter, 1))
     }
 
     private func column<Rows: View>(_ title: String, @ViewBuilder rows: () -> Rows) -> some View {

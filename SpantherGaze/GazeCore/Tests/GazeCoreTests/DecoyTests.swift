@@ -1,7 +1,8 @@
 @testable import GazeCore
 import XCTest
 
-/// «Мелкие цели»: the drawn sizes and the hit zones shrink together, down to a floor set by the calibration.
+/// «Мелкие цели»: the drawn sizes and the hit zones shrink together, down to a floor set by the calibration's miss
+/// and spread. The floor holds for regular targets as well.
 final class SmallTargetTests: XCTestCase {
     /// iPhone 13 in landscape, the app's only orientation.
     let screen = Vec2(844, 390)
@@ -19,12 +20,14 @@ final class SmallTargetTests: XCTestCase {
     func testBalanceJsonAsksForThirtyPercentSmaller() throws {
         let c = try BalanceTests.config()
         XCTAssertEqual(c.smallTargetScale, 0.7, accuracy: 1e-12)
-        XCTAssertEqual(c.zoneFloorFactor, 1.25, accuracy: 1e-12)
-        XCTAssertEqual(c.zoneFloor(measuredErrorPt: 40, scale: 0.7), 50, accuracy: 1e-9)
-        XCTAssertEqual(c.zoneFloor(measuredErrorPt: 40, scale: 1), 0, "regular targets keep the zone they had")
-        XCTAssertEqual(c.zoneFloor(measuredErrorPt: nil, scale: 0.7), 0, "no measured miss by finger")
-        XCTAssertEqual(c.zoneFloor(measuredErrorPt: .nan, scale: 0.7), 0)
-        XCTAssertEqual(c.zoneFloor(measuredErrorPt: -5, scale: 0.7), 0)
+        // The 2026-11-04 phone session's check screen: a miss of 40 pt with 21 pt of spread.
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: 21), 71.5, accuracy: 1e-9)
+        XCTAssertEqual(c.zoneFloor(errorPt: 100, jitterPt: 40), 120, "never over 2 cm")
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: nil), 40, "no spread measured: the miss alone")
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: .nan), 40)
+        XCTAssertEqual(c.zoneFloor(errorPt: nil, jitterPt: 21), 0, "no measured miss by finger")
+        XCTAssertEqual(c.zoneFloor(errorPt: .nan, jitterPt: 21), 0)
+        XCTAssertEqual(c.zoneFloor(errorPt: -5, jitterPt: 21), 0)
     }
 
     func testAMistunedFileCannotMakeTargetsVanishOrGrow() throws {
@@ -35,10 +38,17 @@ final class SmallTargetTests: XCTestCase {
         XCTAssertEqual(c.smallTargetScale, 1)
         c.targetScale = nil
         XCTAssertEqual(c.smallTargetScale, 1)
-        c.minZonePerError = nil
-        XCTAssertEqual(c.zoneFloorFactor, 1.25)
-        c.minZonePerError = -2
-        XCTAssertEqual(c.zoneFloorFactor, 0)
+        c.minZone = nil
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: 20), 70, "the defaults: 1 x miss + 1.5 x spread")
+        var z = BalanceConfig.MinZone()
+        z.perError = -2
+        z.perJitter = -1
+        c.minZone = z
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: 20), 0)
+        z.maxPt = -5
+        z.perError = 1
+        c.minZone = z
+        XCTAssertEqual(c.zoneFloor(errorPt: 40, jitterPt: 20), 0)
         XCTAssertEqual(GameModel(config: c, screen: screen, marginPt: 30, targetScale: 0.05, seed: 1).targetScale, 0.4)
         XCTAssertEqual(GameModel(config: c, screen: screen, marginPt: 30, targetScale: 9, seed: 1).targetScale, 1)
     }
@@ -60,9 +70,9 @@ final class SmallTargetTests: XCTestCase {
     }
 
     func testAZoneNeverFallsUnderTheFloor() throws {
-        // A calibration that missed by 60 pt: the floor is 75 pt.
+        // A calibration that missed by 60 pt with 10 pt of spread: the floor is 75 pt.
         let c = try BalanceTests.config()
-        let floor = c.zoneFloor(measuredErrorPt: 60, scale: 0.7)
+        let floor = c.zoneFloor(errorPt: 60, jitterPt: 10)
         XCTAssertEqual(floor, 75, accuracy: 1e-9)
         let m = GameModel(config: c, screen: screen, marginPt: 60, targetScale: 0.7, zoneFloorPt: floor, seed: 32)
         XCTAssertEqual(m.zone(radius: 32 * 0.7), 75, accuracy: 1e-9, "S: (32 + 60) x 0.7 = 64.4, lifted to the floor")
@@ -72,11 +82,39 @@ final class SmallTargetTests: XCTestCase {
         XCTAssertGreaterThan(progress(m, a), 0)
     }
 
-    func testRegularTargetsAreUnchanged() throws {
+    func testRegularTargetsKeepTheirSize() throws {
         let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 40, seed: 33)
         XCTAssertEqual(m.targetScale, 1)
         XCTAssertEqual(m.spawn(className: "S").radius, 32)
         XCTAssertEqual(m.zone(radius: 32), 72)
+    }
+
+    /// Two players of 16 November 2026 missed by 0.84 and 0.90 cm on the check screen. With about 27 pt of spread
+    /// the floor is about 94 pt: the small meteors' zones grow to it, regular S ones too, the big ones keep theirs.
+    func testTheFloorLiftsTheSmallestZonesWithRegularAndSmallTargets() throws {
+        let c = try BalanceTests.config()
+        let floor = c.zoneFloor(errorPt: 54, jitterPt: 27)
+        XCTAssertEqual(floor, 94.5, accuracy: 1e-9)
+        let regular = GameModel(config: c, screen: screen, marginPt: 54, zoneFloorPt: floor, seed: 36)
+        XCTAssertEqual(regular.zone(radius: 32), 94.5, accuracy: 1e-9, "S: 32 + 54 = 86, lifted")
+        XCTAssertEqual(regular.zone(radius: 50), 104, accuracy: 1e-9, "M keeps 50 + 54")
+        let small = GameModel(config: c, screen: screen, marginPt: 54, targetScale: 0.7, zoneFloorPt: floor, seed: 37)
+        XCTAssertEqual(small.zone(radius: 32 * 0.7), 94.5, accuracy: 1e-9)
+        XCTAssertEqual(small.zone(radius: 75 * 0.7), 94.5, accuracy: 1e-9, "L: (75 + 54) x 0.7 = 90.3, lifted")
+        XCTAssertEqual(small.zone(radius: 110 * 0.7), (110 + 54) * 0.7, accuracy: 1e-9)
+    }
+
+    /// The floor is for meteors: a red sign keeps its radius + E, so a wider spread does not make more errors.
+    func testRedSignsKeepTheirZoneWithoutTheFloor() throws {
+        let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 30, zoneFloorPt: 120, decoys: true,
+                          seed: 38)
+        var s = m.spawnDecoy()
+        XCTAssertEqual(m.signZone(radius: s.radius), 42 + 30, accuracy: 1e-9)
+        s.position = Vec2(400, 200)
+        s.velocity = .zero
+        m.insert(s)
+        for _ in 0..<60 { m.update(dt: 1.0 / 60, gaze: .point(Vec2(400 + 100, 200))) }
+        XCTAssertEqual(m.decoys.first?.dwellSec ?? -1, 0, "100 pt away is outside 72 pt, floor or not")
     }
 
     func testSmallMeteorsBurnInTheSameTime() throws {
@@ -97,7 +135,7 @@ final class SmallTargetTests: XCTestCase {
         let c = try BalanceTests.config()
         let miss = 45.0
         let m = GameModel(config: c, screen: screen, marginPt: c.hitMargin(measuredErrorPt: miss), targetScale: c.smallTargetScale,
-                          zoneFloorPt: c.zoneFloor(measuredErrorPt: miss, scale: c.smallTargetScale), seed: 35)
+                          zoneFloorPt: c.zoneFloor(errorPt: miss, jitterPt: 20), seed: 35)
         var ended: (ratio: Double, next: Int)?
         var t = 0.0
         while ended == nil, t < 120 {

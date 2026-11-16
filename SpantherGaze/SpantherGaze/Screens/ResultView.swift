@@ -51,11 +51,14 @@ struct ResultView: View {
         }
     }
 
-    /// The meteors' hit zone in words (screen pt). With small targets it is the regular zone times the scale, and
-    /// never smaller than the floor the calibration's miss sets.
+    /// The meteors' hit zone in words (screen pt). With small targets it is the regular zone times the scale. Either
+    /// way it is never smaller than the floor the calibration's miss and spread set.
     private var zoneText: String {
         let scale = app.targetScale
-        guard scale < 1 else { return String(format: L("Зона попадания: радиус метеорита + %.0f pt"), app.hitMarginPt) }
+        guard scale < 1 else {
+            guard app.zoneFloorPt > 0 else { return String(format: L("Зона попадания: радиус метеорита + %.0f pt"), app.hitMarginPt) }
+            return String(format: L("Зона попадания: радиус метеорита + %.0f pt, но не меньше %.0f pt"), app.hitMarginPt, app.zoneFloorPt)
+        }
         return String(format: L("Мелкие цели: зона попадания %.0f%% от обычной (радиус метеорита + %.0f pt), но не меньше %.0f pt"),
                       scale * 100, app.hitMarginPt, app.zoneFloorPt)
     }

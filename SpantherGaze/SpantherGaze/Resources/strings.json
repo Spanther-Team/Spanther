@@ -623,6 +623,10 @@
   "en": "Don't look at the red sign",
   "kk": "Қызыл белгіге қарамаймыз"
  },
+ "Метеорит в пузыре: жди, пока пузырь лопнет": {
+  "en": "Meteor in a bubble: wait for the bubble to pop",
+  "kk": "Көпіршіктегі метеорит: көпіршік жарылғанша күт"
+ },
  "Щиты кончились. Уровень {0} ещё раз": {
   "en": "Out of shields. Level {0} again",
   "kk": "Қалқандар таусылды. Деңгей {0} қайтадан"
@@ -871,9 +875,9 @@
   "en": "The camera image stays on the phone. Tables and CSV files leave it only through the Share button.",
   "kk": "Камера бейнесі телефонда қалады. Кестелер мен CSV одан тек «Бөлісу» түймесі арқылы шығады."
  },
- "Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше {1} промаха калибровки.": {
-  "en": "Meteors, stars and hit zones are {0}% smaller. A zone is never smaller than {1} calibration misses.",
-  "kk": "Метеориттер, жұлдыздар және тию аймақтары {0}% кішірек. Аймақ калибрлеу қатесінің {1} еселігінен кіші болмайды."
+ "Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше, чем промах калибровки × {1} + её разброс × {2}.": {
+  "en": "Meteors, stars and hit zones are {0}% smaller. A zone is never smaller than the calibration's miss × {1} + its spread × {2}.",
+  "kk": "Метеориттер, жұлдыздар және тию аймақтары {0}% кішірек. Аймақ калибрлеу қатесі × {1} + оның шашырауы × {2} мәнінен кіші болмайды."
  },
  "Готовим задание…": {
   "en": "Preparing the task…",
@@ -994,6 +998,10 @@
  "Зона попадания: радиус метеорита + %.0f pt": {
   "en": "Hit zone: meteor radius + %.0f pt",
   "kk": "Тию аймағы: метеорит радиусы + %.0f pt"
+ },
+ "Зона попадания: радиус метеорита + %.0f pt, но не меньше %.0f pt": {
+  "en": "Hit zone: meteor radius + %.0f pt, but at least %.0f pt",
+  "kk": "Тию аймағы: метеорит радиусы + %.0f pt, бірақ кемінде %.0f pt"
  },
  "Мелкие цели: зона попадания %.0f%% от обычной (радиус метеорита + %.0f pt), но не меньше %.0f pt": {
   "en": "Small targets: hit zone %.0f%% of normal (meteor radius + %.0f pt), but at least %.0f pt",

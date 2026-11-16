@@ -27,6 +27,10 @@ public struct Asteroid: Sendable, Identifiable {
     public var firstLookTime: Double?
     public var slips = 0
     public var rotation: Double
+    /// How far it still has to fly before it can be burned (screen pt). A new meteor comes in under a shield
+    /// (`GameModel.spawnShieldPt`): while it lasts a look finds it but does not charge or slow it.
+    public var shieldPt = 0.0
+    public var isShielded: Bool { shieldPt > 0 }
 }
 
 /// One line of the per-asteroid log for the parent report (BALANCE.md, last section).
@@ -121,8 +125,10 @@ public final class GameModel {
     public var marginPt: Double
     /// «Мелкие цели»: drawn radii and hit zones times this (1: the BALANCE.md sizes).
     public let targetScale: Double
-    /// With small targets, no hit zone is smaller than this (screen pt; `BalanceConfig.zoneFloor`).
+    /// No meteor's hit zone is smaller than this (screen pt; `BalanceConfig.zoneFloor`). Red signs keep theirs.
     public let zoneFloorPt: Double
+    /// How far a meteor the play brings in flies under its shield (screen pt; `BalanceConfig.spawnShieldPt`).
+    public var spawnShieldPt: Double
     /// The red signs to pass by (when the play has them and balance.json describes them).
     public private(set) var decoys: [Decoy] = []
     public let decoyConfig: DecoyConfig?
@@ -148,6 +154,7 @@ public final class GameModel {
         self.marginPt = marginPt
         self.targetScale = min(1, max(0.4, targetScale))
         self.zoneFloorPt = max(0, zoneFloorPt)
+        spawnShieldPt = config.spawnShieldPt()
         decoyConfig = decoys ? config.decoys : nil
         decoyTimer = config.decoys?.firstAfterSec ?? 0
         self.rng = SeededRandom(seed: seed)
@@ -195,9 +202,13 @@ public final class GameModel {
         return s > 0 ? earthCenter.y - s.squareRoot() : earthCenter.y
     }
 
-    /// Hit-zone radius (screen pt) of a target drawn with `radius`: the radius plus E, both at the target scale,
-    /// and with small targets never under the floor.
-    public func zone(radius: Double) -> Double { max(radius + marginPt * targetScale, zoneFloorPt) }
+    /// Hit-zone radius (screen pt) of a meteor drawn with `radius`: the radius plus E, both at the target scale,
+    /// and never under the floor the calibration's miss and spread set.
+    public func zone(radius: Double) -> Double { max(signZone(radius: radius), zoneFloorPt) }
+
+    /// A red sign's zone: the radius plus E without the floor. A wider tracker spread must not turn more looks
+    /// that pass a sign by into errors.
+    public func signZone(radius: Double) -> Double { radius + marginPt * targetScale }
 
     /// Distance of a point to an asteroid divided by the hit-zone radius (drawn radius + E). < 1 means inside.
     public func zoneRatio(_ p: Vec2, _ a: Asteroid) -> Double { p.distance(to: a.position) / zone(radius: a.radius) }
@@ -240,14 +251,14 @@ public final class GameModel {
                 if r < best { best = r; targetIndex = i }
             }
             for (i, s) in decoys.enumerated() {
-                let r = p.distance(to: s.position) / zone(radius: s.radius)
+                let r = p.distance(to: s.position) / signZone(radius: s.radius)
                 if r < best { best = r; lookedDecoy = i; targetIndex = nil }
             }
         }
 
         // Energy: a target the pool cannot pay for does not charge.
         var nowStarved = false
-        if let t = targetIndex, energyEnabled, cost(asteroids[t]) > energy {
+        if let t = targetIndex, energyEnabled, !asteroids[t].isShielded, cost(asteroids[t]) > energy {
             nowStarved = true
         }
         if nowStarved != starved { starved = nowStarved; events.append(.starved(nowStarved)) }
@@ -261,18 +272,22 @@ public final class GameModel {
             a.isStarved = looked && nowStarved
             // Reaction time counts the first look, whether or not there is energy to spend on it.
             if looked && a.firstLookTime == nil { a.firstLookTime = time }
-            if looked && !nowStarved {
+            if looked && !nowStarved && !a.isShielded {
                 a.progress += dt / a.dwellSec
             } else if looked {
                 // Looked at but unaffordable: progress waits for the reload. It does not drain, and it is
-                // not an attention slip, so the parent report stays about attention, not energy.
+                // not an attention slip, so the parent report stays about attention, not energy. Under its shield
+                // a meteor waits the same way; the look still counts as the first look for the reaction time.
             } else if !freezeProgress && a.progress > 0 {
                 a.progress = max(0, a.progress - dt / config.decayToZeroSec)
                 if a.progress == 0 { a.slips += 1 }
             }
-            // The gaze brake works with or without energy: slowing the meteor buys time to reload.
-            let speed = looked ? 1 - brake : 1
-            a.position = a.position + a.velocity * (dt * speed)
+            // The gaze brake works with or without energy: slowing the meteor buys time to reload. A shielded one
+            // is not braked, so its shield lasts the same short time whether it is looked at or not.
+            let speed = looked && !a.isShielded ? 1 - brake : 1
+            let step = a.velocity * (dt * speed)
+            a.position = a.position + step
+            if a.isShielded { a.shieldPt = max(0, a.shieldPt - step.length) }
             a.rotation += dt * 0.6
 
             if a.progress >= 1 {
@@ -342,7 +357,10 @@ public final class GameModel {
 
         spawnTimer -= dt
         if spawnTimer <= 0, asteroids.count < config.maxAsteroids(d: d, marginPt: marginPt) {
-            let a = spawn()
+            var a = spawn()
+            // It flies in under a shield: no burning until it has come `spawnShieldPt` in from the edge, so one that
+            // appears where the player happens to look is not gone before they have seen it.
+            a.shieldPt = spawnShieldPt
             asteroids.append(a)
             events.append(.spawned(a))
             spawnTimer = BalanceConfig.lerp(config.spawnIntervalSec, d)
@@ -424,7 +442,7 @@ public final class GameModel {
     }
 
     /// Picks a class by the level's mix and an edge to come in from (see `entry`), and aims it at Earth so it
-    /// arrives after the class's travel time.
+    /// arrives after the class's travel time. It has no shield yet: the play gives it one when it brings it in.
     public func spawn(className forced: String? = nil) -> Asteroid {
         let mix = config.classMix(level: level)
         var name = forced ?? "S"
