@@ -92,9 +92,9 @@ private struct HUDView: View {
                                     .frame(width: 10, height: 10)
                             }
                         }
-                        .accessibilityLabel("Щиты: \(hud.shields) из 5")
+                        .accessibilityLabel(L("Щиты: {0} из 5", hud.shields))
                     }
-                    pill { Text("Уровень \(hud.level)").font(.system(size: 15, weight: .heavy, design: .rounded)).rolling(hud.level) }
+                    pill { Text(L("Уровень {0}", hud.level)).font(.system(size: 15, weight: .heavy, design: .rounded)).rolling(hud.level) }
                     if decoysOn {
                         // The count of looks at red signs: the sign itself and a number, no word and no alarm.
                         pill {
@@ -105,8 +105,8 @@ private struct HUDView: View {
                             }
                         }
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(touchMode ? "Касаний красных знаков: \(hud.decoyErrors)"
-                                                      : "Взглядов на красные знаки: \(hud.decoyErrors)")
+                        .accessibilityLabel(touchMode ? L("Касаний красных знаков: {0}", hud.decoyErrors)
+                                                      : L("Взглядов на красные знаки: {0}", hud.decoyErrors))
                     }
                     // Landscape: one row, so the meteors keep the height. The energy bar sits in it.
                     if hud.energyMax > 0 {
@@ -122,11 +122,11 @@ private struct HUDView: View {
                                 .frame(width: 22)
                         }
                     }
-                    .accessibilityLabel(musicOn ? "Выключить музыку" : "Включить музыку")
+                    .accessibilityLabel(musicOn ? L("Выключить музыку") : L("Включить музыку"))
                     Button { paused = true } label: {
                         pill { Image(systemName: "pause.fill").font(.system(size: 15, weight: .semibold)) }
                     }
-                    .accessibilityLabel("Пауза")
+                    .accessibilityLabel(L("Пауза"))
                 }
                 // The front camera's notch is on the left.
                 .padding(.leading, 56)
@@ -161,23 +161,23 @@ private struct HUDView: View {
                     .allowsHitTesting(false)
             }
             if hud.lookBack && !paused {
-                Text("Посмотри на экран").font(Atlas.display(26)).foregroundStyle(Atlas.ink)
+                Text(L("Посмотри на экран")).font(Atlas.display(26)).foregroundStyle(Atlas.ink)
                     .atlasPlate(padding: 16, accent: Atlas.sky)
             }
             if paused {
                 VStack(spacing: 12) {
-                    Text("Пауза").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                    Text(L("Пауза")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
                     if hud.decoys > 0 {
-                        Text(touchMode ? "Касаний красных знаков: \(hud.decoyErrors) из \(hud.decoys)"
-                                       : "Взглядов на красные знаки: \(hud.decoyErrors) из \(hud.decoys)")
+                        Text(touchMode ? L("Касаний красных знаков: {0} из {1}", hud.decoyErrors, hud.decoys)
+                                       : L("Взглядов на красные знаки: {0} из {1}", hud.decoyErrors, hud.decoys))
                             .font(Atlas.caption)
                             .foregroundStyle(Atlas.inkSoft)
                     }
-                    Button { paused = false } label: { Text("Продолжить") }.buttonStyle(AtlasPrimaryButton())
+                    Button { paused = false } label: { Text(L("Продолжить")) }.buttonStyle(AtlasPrimaryButton())
                     if canRecalibrate {
-                        Button(action: onRecalibrate) { Text("Калибровка") }.buttonStyle(AtlasSecondaryButton())
+                        Button(action: onRecalibrate) { Text(L("Калибровка")) }.buttonStyle(AtlasSecondaryButton())
                     }
-                    Button(action: onQuit) { Text("Главное меню") }.buttonStyle(AtlasSecondaryButton())
+                    Button(action: onQuit) { Text(L("Главное меню")) }.buttonStyle(AtlasSecondaryButton())
                 }
                 .frame(maxWidth: 320)
                 .atlasPlate(padding: 22, accent: Atlas.sky)
@@ -245,7 +245,7 @@ private struct EnergyBar: View {
         .scaleEffect(glow ? 1.06 : 1)
         .contentShape(Rectangle())
         .onTapGesture { if touchMode { onTap() } }
-        .accessibilityLabel("Энергия \(energy) из \(max)")
+        .accessibilityLabel(L("Энергия {0} из {1}", energy, max))
         .onChange(of: pulse) { _ in
             withAnimation(.easeOut(duration: 0.15)) { glow = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { withAnimation(.easeIn(duration: 0.3)) { glow = false } }
@@ -259,15 +259,12 @@ private struct ReloadHint: View {
     let progress: Int
     let needed: Int
 
-    /// 2, 3, 4, 22... раза; 5...20, 25... раз.
-    private var times: String {
-        let n = needed % 100
-        return (2...4).contains(n % 10) && !(12...14).contains(n) ? "\(needed) раза" : "\(needed) раз"
-    }
+    /// 1 раз, 2 раза, 5 раз.
+    private var times: String { "\(needed)\u{00A0}" + plural(needed, "раз", "раза", "раз") }
 
     var body: some View {
         VStack(spacing: 8) {
-            Text(touchMode ? "Нажми на энергию \(times)" : "Моргни \(times)")
+            Text(touchMode ? L("Нажми на энергию {0}", times) : L("Моргни {0}", times))
                 .font(Atlas.title)
                 .foregroundStyle(Atlas.ink)
             HStack(spacing: 10) {

@@ -54,6 +54,8 @@ struct SpantherGazeApp: App {
 
 struct RootView: View {
     @EnvironmentObject var app: AppModel
+    /// Its language is the whole app's (`Loc`).
+    @EnvironmentObject var startGate: StartGate
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -74,6 +76,10 @@ struct RootView: View {
                 }
             }
             .transition(screenTransition)
+            // A new language builds the screens again, so that every text is asked for in it (the garden behind
+            // them keeps growing).
+            .id(startGate.language)
+            .environment(\.locale, Loc.locale)
             if app.showDebug { DebugOverlay().allowsHitTesting(false) }
         }
         // A new menu screen springs in from the right; the old one fades under it. Never into the probe: its 90

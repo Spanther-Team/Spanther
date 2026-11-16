@@ -106,10 +106,10 @@ struct UpdateRequiredView: View {
                 Text("SPANTHER")
                     .font(Atlas.wordmark(24))
                     .foregroundStyle(Atlas.ink)
-                Text("Нужно обновить приложение")
+                Text(L("Нужно обновить приложение"))
                     .font(Atlas.title)
                     .foregroundStyle(Atlas.ink)
-                Text("В App Store вышла версия \(version). Эта версия (\(gate.installedVersion)) больше не запускается: обнови приложение, чтобы продолжить.")
+                Text(L("В App Store вышла версия {0}. Эта версия ({1}) больше не запускается: обнови приложение, чтобы продолжить.", version, gate.installedVersion))
                     .font(Atlas.body)
                     .foregroundStyle(Atlas.inkSoft)
                     .multilineTextAlignment(.center)
@@ -117,7 +117,7 @@ struct UpdateRequiredView: View {
                 Button {
                     gate.openAppStore()
                 } label: {
-                    Text("Обновить в App Store").padding(.horizontal, 28)
+                    Text(L("Обновить в App Store")).padding(.horizontal, 28)
                 }
                 .buttonStyle(AtlasPrimaryButton())
                 .fixedSize()

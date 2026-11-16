@@ -34,7 +34,7 @@ struct CalibrationView: View {
                         .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
                         .frame(width: 240)
                         .position(x: size.x * 0.3, y: 34)
-                    Button { app.cancelCalibration() } label: { Text("Отмена").font(.footnote.bold()).padding(.horizontal, 18) }
+                    Button { app.cancelCalibration() } label: { Text(L("Отмена")).font(.footnote.bold()).padding(.horizontal, 18) }
                         .buttonStyle(AtlasSecondaryButton())
                         .fixedSize()
                         .position(x: size.x * 0.7, y: size.y - 40)
@@ -52,17 +52,17 @@ struct CalibrationView: View {
 
     private var intro: some View {
         VStack(spacing: 14) {
-            Text(kind == .calibration ? "Научим игру твоим глазам" : "Проверка точности")
+            Text(kind == .calibration ? L("Научим игру твоим глазам") : L("Проверка точности"))
                 .font(Atlas.display(28))
                 .foregroundStyle(Atlas.ink)
             Text(kind == .calibration
-                 ? "Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать. Калибровка одна на всё занятие."
-                 : "Ещё 13 точек в новых местах. По ним игра узнает, насколько точно видит твой взгляд.")
+                 ? L("Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать. Калибровка одна на всё занятие.")
+                 : L("Ещё 13 точек в новых местах. По ним игра узнает, насколько точно видит твой взгляд."))
                 .font(Atlas.body)
                 .multilineTextAlignment(.center).foregroundStyle(Atlas.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
             if app.nightVision {
-                Text("Ночное зрение: экран светит на лицо на полной яркости, зрачки не нужны.")
+                Text(L("Ночное зрение: экран светит на лицо на полной яркости, зрачки не нужны."))
                     .font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -72,9 +72,9 @@ struct CalibrationView: View {
                 Text(faceLine).font(Atlas.caption).foregroundStyle(status.faceFound ? Atlas.ink : Atlas.vermilion)
             }
             HStack(spacing: 12) {
-                Button { app.cancelCalibration() } label: { Text("Назад") }
+                Button { app.cancelCalibration() } label: { Text(L("Назад")) }
                     .buttonStyle(AtlasSecondaryButton())
-                Button { started = true } label: { Text("Начать") }
+                Button { started = true } label: { Text(L("Начать")) }
                     .buttonStyle(AtlasPrimaryButton())
                     .disabled(!status.faceFound)
             }
@@ -89,10 +89,10 @@ struct CalibrationView: View {
         let dark = (status.light ?? 1000) < 120
         if !status.faceFound {
             return app.nightVision || dark
-                ? "Не видно лица. Если темно, поднеси телефон ближе: экран подсветит лицо."
-                : "Не видно лица"
+                ? L("Не видно лица. Если темно, поднеси телефон ближе: экран подсветит лицо.")
+                : L("Не видно лица")
         }
-        return dark && !app.nightVision ? "Лицо найдено, но темно. Включи ночное зрение в меню." : "Лицо найдено"
+        return dark && !app.nightVision ? L("Лицо найдено, но темно. Включи ночное зрение в меню.") : L("Лицо найдено")
     }
 
     @MainActor
@@ -100,7 +100,7 @@ struct CalibrationView: View {
         let label = kind == .calibration ? "calibration" : "check"
         index = 0
         while index < points.count {
-            message = kind == .calibration ? "Смотри на точку · \(index + 1) из \(points.count)" : "Проверка · \(index + 1) из \(points.count)"
+            message = kind == .calibration ? L("Смотри на точку · {0} из {1}", index + 1, points.count) : L("Проверка · {0} из {1}", index + 1, points.count)
             collecting = false
             try? await Task.sleep(nanoseconds: settle)
             if Task.isCancelled { return }
@@ -111,7 +111,7 @@ struct CalibrationView: View {
             if app.endCollecting() {
                 index += 1
             } else {
-                message = "Лицо пропало. Повторим эту точку."
+                message = L("Лицо пропало. Повторим эту точку.")
                 try? await Task.sleep(nanoseconds: 600_000_000)
             }
         }

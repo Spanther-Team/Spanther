@@ -54,7 +54,7 @@ private struct PlaySummaryView: View {
         let s = summary
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Итог игры").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                Text(L("Итог игры")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
                 if !s.childCode.isEmpty {
                     Text(s.childCode).font(Atlas.title).foregroundStyle(Atlas.vermilion)
                 }
@@ -77,7 +77,7 @@ private struct PlaySummaryView: View {
                         ForEach(ReportText.notes(s, decoyDwellSec: app.balance.decoys?.errorDwellSec ?? 0.25), id: \.self) {
                             Text($0)
                         }
-                        Text("Это результаты игры, а не медицинские показатели.")
+                        Text(L("Это результаты игры, а не медицинские показатели."))
                     }
                     .font(Atlas.caption)
                     .foregroundStyle(Atlas.inkSoft)
@@ -87,13 +87,13 @@ private struct PlaySummaryView: View {
             }
             HStack(spacing: 12) {
                 if let url = exportURL {
-                    ShareLink(item: url) { Label("Таблица CSV", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: url) { Label(L("Таблица CSV"), systemImage: "square.and.arrow.up") }
                         .buttonStyle(AtlasSecondaryButton())
-                        .accessibilityLabel("Поделиться таблицей CSV этой игры")
+                        .accessibilityLabel(L("Поделиться таблицей CSV этой игры"))
                 }
-                Button(action: onHistory) { Text("Все занятия") }
+                Button(action: onHistory) { Text(L("Все занятия")) }
                     .buttonStyle(AtlasSecondaryButton())
-                Button(action: onDone) { Text("Готово") }
+                Button(action: onDone) { Text(L("Готово")) }
                     .buttonStyle(AtlasPrimaryButton())
             }
         }
@@ -134,19 +134,19 @@ private struct HistoryView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Занятия").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
-                    Text("Результаты игры, а не медицинские показатели.")
+                    Text(L("Занятия")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                    Text(L("Результаты игры, а не медицинские показатели."))
                         .font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                 }
                 Spacer()
                 if let url = exportURL, !app.sessions.isEmpty {
-                    ShareLink(item: url) { Label("Таблица", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: url) { Label(L("Таблица"), systemImage: "square.and.arrow.up") }
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Atlas.ink)
                         .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel("Поделиться таблицей всех занятий для Excel")
+                        .accessibilityLabel(L("Поделиться таблицей всех занятий для Excel"))
                 }
-                Button(action: onDone) { Text("Готово") }
+                Button(action: onDone) { Text(L("Готово")) }
                     .buttonStyle(AtlasPrimaryButton())
                     .frame(width: 130)
             }
@@ -165,11 +165,11 @@ private struct HistoryView: View {
     private var child: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Код ребёнка")
+                Text(L("Код ребёнка"))
                     .font(Atlas.caption.weight(.semibold))
                     .foregroundStyle(Atlas.inkSoft)
                     .textCase(.uppercase)
-                TextField("Например, К-07", text: $app.childCode)
+                TextField(L("Например, К-07"), text: $app.childCode)
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .foregroundStyle(Atlas.ink)
                     .textInputAutocapitalization(.characters)
@@ -180,14 +180,14 @@ private struct HistoryView: View {
                     .frame(minHeight: 44)
                     .background(InkSlab(shape: CutPlate(cut: 10), fill: editingCode ? Atlas.cream : Atlas.paperShade,
                                         depth: editingCode ? 4 : 2))
-                Text("Новые игры сохраняются под этим кодом. Без имени: кто под каким кодом, знает только центр.")
+                Text(L("Новые игры сохраняются под этим кодом. Без имени: кто под каким кодом, знает только центр."))
                     .font(Atlas.caption)
                     .foregroundStyle(Atlas.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
                 trends
                 if !plays.isEmpty {
                     Button(role: .destructive) { confirmDelete = true } label: {
-                        Text(app.currentChildCode.isEmpty ? "Удалить все занятия" : "Удалить занятия \(app.currentChildCode)")
+                        Text(app.currentChildCode.isEmpty ? L("Удалить все занятия") : L("Удалить занятия {0}", app.currentChildCode))
                     }
                     .font(Atlas.caption.weight(.semibold))
                     .foregroundStyle(Atlas.vermilion)
@@ -196,8 +196,8 @@ private struct HistoryView: View {
             }
         }
         .confirmationDialog(deleteQuestion, isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Удалить", role: .destructive) { app.deleteSessions(of: app.childCode) }
-            Button("Отмена", role: .cancel) {}
+            Button(L("Удалить"), role: .destructive) { app.deleteSessions(of: app.childCode) }
+            Button(L("Отмена"), role: .cancel) {}
         }
     }
 
@@ -206,7 +206,7 @@ private struct HistoryView: View {
         let list = ReportText.trends(plays)
         if !list.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Первая и последняя игра")
+                Text(L("Первая и последняя игра"))
                     .font(Atlas.caption.weight(.semibold))
                     .foregroundStyle(Atlas.inkSoft)
                     .textCase(.uppercase)
@@ -229,14 +229,14 @@ private struct HistoryView: View {
     }
 
     private var deleteQuestion: String {
-        app.currentChildCode.isEmpty ? "Удалить все занятия с телефона?" : "Удалить занятия \(app.currentChildCode) с телефона?"
+        app.currentChildCode.isEmpty ? L("Удалить все занятия с телефона?") : L("Удалить занятия {0} с телефона?", app.currentChildCode)
     }
 
     @ViewBuilder private var list: some View {
         if plays.isEmpty {
             Text(app.currentChildCode.isEmpty
-                 ? "Здесь появятся сыгранные игры: метеориты, когда игра закрыта, ритм, когда трек доигран, разминка, когда прошла её минута."
-                 : "Под кодом \(app.currentChildCode) игр пока нет. Они появятся здесь, когда ребёнок сыграет.")
+                 ? L("Здесь появятся сыгранные игры: метеориты, когда игра закрыта, ритм, когда трек доигран, разминка, когда прошла её минута.")
+                 : L("Под кодом {0} игр пока нет. Они появятся здесь, когда ребёнок сыграет.", app.currentChildCode))
                 .font(Atlas.body)
                 .foregroundStyle(Atlas.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -281,25 +281,17 @@ enum ReportText {
 
     static func percent(_ v: Double?) -> String { v.map { "\(Int(($0 * 100).rounded()))%" } ?? "–" }
 
-    static func seconds(_ v: Double?) -> String { v.map { SessionHistory.number($0, 1) + nb + "с" } ?? "–" }
+    static func seconds(_ v: Double?) -> String { v.map { SessionHistory.number($0, 1) + nb + L("с") } ?? "–" }
 
     static func duration(_ sec: Double) -> String {
         let total = Int(sec.rounded()), m = total / 60, s = total % 60
-        if m == 0 { return "\(s)\(nb)с" }
-        return s == 0 ? "\(m)\(nb)мин" : "\(m)\(nb)мин \(s)\(nb)с"
-    }
-
-    /// 1 игра, 2 игры, 5 игр, 21 игра.
-    static func plural(_ n: Int, _ one: String, _ few: String, _ many: String) -> String {
-        let d = n % 10, h = n % 100
-        if d == 1 && h != 11 { return one }
-        if (2...4).contains(d) && !(12...14).contains(h) { return few }
-        return many
+        if m == 0 { return L("{0}\u{00A0}с", s) }
+        return s == 0 ? L("{0}\u{00A0}мин", m) : L("{0}\u{00A0}мин {1}\u{00A0}с", m, s)
     }
 
     static func when(_ d: Date) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = Loc.locale
         f.dateFormat = "d MMM, HH:mm"
         return f.string(from: d)
     }
@@ -309,14 +301,14 @@ enum ReportText {
     }
 
     private static func calibration(_ s: SessionSummary) -> String? {
-        s.calibrationErrorCm.map { "промах калибровки\(nb)\(SessionHistory.number($0, 1))\(nb)см" }
+        s.calibrationErrorCm.map { L("промах калибровки\u{00A0}{0}\u{00A0}см", SessionHistory.number($0, 1)) }
     }
 
     /// The game, how it was played, for how long, with which targets, and (with `calibration`) the calibration
     /// error before it.
     static func setup(_ s: SessionSummary, calibration withCalibration: Bool = true) -> String {
-        var parts = [SessionHistory.gameName(s.game), s.byEye ? "взглядом" : "пальцем", duration(s.durationSec)]
-        if s.targetScale != nil { parts.append("мелкие цели") }
+        var parts = [L(SessionHistory.gameName(s.game)), s.byEye ? L("взглядом") : L("пальцем"), duration(s.durationSec)]
+        if s.targetScale != nil { parts.append(L("мелкие цели")) }
         if withCalibration, let c = calibration(s) { parts.append(c) }
         return parts.joined(separator: " · ")
     }
@@ -338,43 +330,43 @@ enum ReportText {
     static func numbers(_ s: SessionSummary) -> [Number] {
         let dash = "–"
 
-        let holdLabel = s.byEye ? "удержание взгляда" : "удержание пальца"
+        let holdLabel = s.byEye ? L("удержание взгляда") : L("удержание пальца")
         let holdSmall: String
         switch s.game {
-        case .meteors: holdSmall = s.holdShare == nil ? "нет данных" : "без срыва"
-        case .rhythm: holdSmall = s.byEye ? "взгляд на ноте" : "только взглядом"
-        case .pursuit: holdSmall = "рядом с точкой"
+        case .meteors: holdSmall = s.holdShare == nil ? L("нет данных") : L("без срыва")
+        case .rhythm: holdSmall = s.byEye ? L("взгляд на ноте") : L("только взглядом")
+        case .pursuit: holdSmall = L("рядом с точкой")
         }
         let holdValue = percent(s.holdShare)
         let hold = Number(big: holdValue, small: holdSmall, label: holdLabel, rowLabel: holdLabel, rowValue: holdValue)
 
         var timingValue = dash
-        if let ms = s.timingDeviationMs { timingValue = SessionHistory.number(ms, 0) + nb + "мс" }
-        let timingSmall = s.game == .rhythm ? "в среднем" : "только в ритме"
-        let timing = Number(big: timingValue, small: timingSmall, label: "отклонение от ритма",
-                            rowLabel: "отклонение от ритма", rowValue: timingValue)
+        if let ms = s.timingDeviationMs { timingValue = SessionHistory.number(ms, 0) + nb + L("мс") }
+        let timingSmall = s.game == .rhythm ? L("в среднем") : L("только в ритме")
+        let timing = Number(big: timingValue, small: timingSmall, label: L("отклонение от ритма"),
+                            rowLabel: L("отклонение от ритма"), rowValue: timingValue)
 
         var signsBig = dash, signsRow = dash
-        var signsSmall = s.game == .meteors ? "знаков не было" : "только в метеоритах"
+        var signsSmall = s.game == .meteors ? L("знаков не было") : L("только в метеоритах")
         if s.game == .meteors, let all = s.decoys, let errors = s.decoyErrors {
             signsBig = String(errors)
-            signsSmall = "из" + nb + String(all)
-            signsRow = String(errors) + nb + "из" + nb + String(all)
+            signsSmall = L("из") + nb + String(all)
+            signsRow = L("{0}\u{00A0}из\u{00A0}{1}", errors, all)
         }
-        let signs = Number(big: signsBig, small: signsSmall, label: "ошибки на красных",
-                           rowLabel: "ошибки на красных", rowValue: signsRow)
+        let signs = Number(big: signsBig, small: signsSmall, label: L("ошибки на красных"),
+                           rowLabel: L("ошибки на красных"), rowValue: signsRow)
 
         var winksBig = dash, winksRow = dash
-        var winksSmall = s.game == .rhythm ? "только взглядом" : "только в ритме"
+        var winksSmall = s.game == .rhythm ? L("только взглядом") : L("только в ритме")
         if s.game == .rhythm, s.byEye, s.winkLeft != nil || s.winkRight != nil {
             let left: String = s.winkLeft.map { String(Int(($0 * 100).rounded())) } ?? dash
             let right: String = s.winkRight.map { String(Int(($0 * 100).rounded())) } ?? dash
             winksBig = left + " · " + right
-            winksSmall = "левый · правый, %"
+            winksSmall = L("левый · правый, %")
             winksRow = percent(s.winkLeft) + " · " + percent(s.winkRight)
         }
-        let winks = Number(big: winksBig, small: winksSmall, label: "подмигивания",
-                           rowLabel: "подмигивания, левый · правый", rowValue: winksRow)
+        let winks = Number(big: winksBig, small: winksSmall, label: L("подмигивания"),
+                           rowLabel: L("подмигивания, левый · правый"), rowValue: winksRow)
 
         return [hold, timing, signs, winks]
     }
@@ -386,26 +378,26 @@ enum ReportText {
         switch s.game {
         case .meteors:
             out.append(s.byEye
-                       ? "Удержание: метеориты, сожжённые одним взглядом, без срыва, из тех, на которые ребёнок посмотрел."
-                       : "Удержание: метеориты, сожжённые одним касанием, без срыва, из тех, которых ребёнок коснулся.")
+                       ? L("Удержание: метеориты, сожжённые одним взглядом, без срыва, из тех, на которые ребёнок посмотрел.")
+                       : L("Удержание: метеориты, сожжённые одним касанием, без срыва, из тех, которых ребёнок коснулся."))
             if s.decoys != nil {
-                let dwell = SessionHistory.number(decoyDwellSec, 2) + nb + "с"
+                let dwell = SessionHistory.number(decoyDwellSec, 2) + nb + L("с")
                 out.append(s.byEye
-                           ? "Ошибка на красном: взгляд задержался на красном знаке дольше \(dwell)."
-                           : "Ошибка на красном: палец задержался на красном знаке дольше \(dwell).")
+                           ? L("Ошибка на красном: взгляд задержался на красном знаке дольше {0}.", dwell)
+                           : L("Ошибка на красном: палец задержался на красном знаке дольше {0}.", dwell))
             }
         case .rhythm:
             if s.byEye {
-                out.append("Удержание: подмигивания, при которых взгляд остался на ноте, из всех попавших в такт.")
+                out.append(L("Удержание: подмигивания, при которых взгляд остался на ноте, из всех попавших в такт."))
             }
-            out.append("Отклонение от ритма: насколько в среднем ноты сыграны раньше или позже своего обычного опоздания.")
+            out.append(L("Отклонение от ритма: насколько в среднем ноты сыграны раньше или позже своего обычного опоздания."))
             if s.byEye {
-                out.append("Подмигивания: какая доля подмигиваний каждым глазом сыграла ноту.")
+                out.append(L("Подмигивания: какая доля подмигиваний каждым глазом сыграла ноту."))
             }
         case .pursuit:
             out.append(s.byEye
-                       ? "Удержание: доля минуты, когда взгляд шёл рядом с точкой. Секунда у каждой смены траектории не считается."
-                       : "Удержание: доля минуты, когда палец шёл рядом с точкой. Секунда у каждой смены траектории не считается.")
+                       ? L("Удержание: доля минуты, когда взгляд шёл рядом с точкой. Секунда у каждой смены траектории не считается.")
+                       : L("Удержание: доля минуты, когда палец шёл рядом с точкой. Секунда у каждой смены траектории не считается."))
         }
         return out
     }
@@ -414,42 +406,42 @@ enum ReportText {
     /// summary shows them as tiles and leaves them out here). `calibration`: ending with the calibration error.
     static func results(_ s: SessionSummary, numbers: Bool = true, calibration withCalibration: Bool = true) -> String {
         var parts: [String] = []
-        let hold: String? = s.holdShare == nil ? nil : "удержание" + nb + percent(s.holdShare)
+        let hold: String? = s.holdShare == nil ? nil : L("удержание") + nb + percent(s.holdShare)
         switch s.game {
         case .meteors:
-            parts.append("сбито \(s.burned ?? 0)\(nb)из\(nb)\(s.meteors ?? 0)\(nb)(\(percent(s.burnedShare)))")
+            parts.append(L("сбито {0}\u{00A0}из\u{00A0}{1}\u{00A0}({2})", s.burned ?? 0, s.meteors ?? 0, percent(s.burnedShare)))
             if numbers {
                 if let hold { parts.append(hold) }
                 if let all = s.decoys, let errors = s.decoyErrors {
-                    parts.append("ошибок на красных" + nb + String(errors) + nb + "из" + nb + String(all))
+                    parts.append(L("ошибок на красных\u{00A0}{0}\u{00A0}из\u{00A0}{1}", errors, all))
                 }
             }
-            if let v = s.meanFirstLookSec { parts.append((s.byEye ? "первый взгляд" : "первое касание") + nb + seconds(v)) }
-            if let v = s.slipsPerMeteor { parts.append("срывов на метеорит" + nb + SessionHistory.number(v, 1)) }
-            if let l = s.maxLevel { parts.append("уровень" + nb + String(l)) }
+            if let v = s.meanFirstLookSec { parts.append((s.byEye ? L("первый взгляд") : L("первое касание")) + nb + seconds(v)) }
+            if let v = s.slipsPerMeteor { parts.append(L("срывов на метеорит") + nb + SessionHistory.number(v, 1)) }
+            if let l = s.maxLevel { parts.append(L("уровень") + nb + String(l)) }
         case .rhythm:
-            parts.append("«\(s.track ?? "")», \(level(s))")
-            parts.append("точность" + nb + percent(s.accuracy))
-            parts.append("сыграно \(s.hits ?? 0)\(nb)из\(nb)\(s.notes ?? 0)")
+            parts.append(L("«{0}», {1}", L(s.track ?? ""), level(s)))
+            parts.append(L("точность") + nb + percent(s.accuracy))
+            parts.append(L("сыграно {0}\u{00A0}из\u{00A0}{1}", s.hits ?? 0, s.notes ?? 0))
             if numbers {
                 if let hold { parts.append(hold) }
                 if let ms = s.timingDeviationMs {
-                    parts.append("отклонение от ритма" + nb + SessionHistory.number(ms, 0) + nb + "мс")
+                    parts.append(L("отклонение от ритма") + nb + SessionHistory.number(ms, 0) + nb + L("мс"))
                 }
                 if s.winkLeft != nil || s.winkRight != nil {
-                    parts.append("подмигивания: левый" + nb + percent(s.winkLeft) + ", правый" + nb + percent(s.winkRight))
+                    parts.append(L("подмигивания: левый") + nb + percent(s.winkLeft) + L(", правый") + nb + percent(s.winkRight))
                 }
             }
-            parts.append("лучшая серия" + nb + String(s.maxCombo ?? 0))
-            if let w = s.extraWinks { parts.append("лишних подмигиваний" + nb + String(w)) }
+            parts.append(L("лучшая серия") + nb + String(s.maxCombo ?? 0))
+            if let w = s.extraWinks { parts.append(L("лишних подмигиваний") + nb + String(w)) }
         case .pursuit:
             if numbers, let hold { parts.append(hold) }
-            if s.pursuitHorizontal != nil { parts.append("горизонталь" + nb + percent(s.pursuitHorizontal)) }
-            if s.pursuitVertical != nil { parts.append("вертикаль" + nb + percent(s.pursuitVertical)) }
-            if s.pursuitEight != nil { parts.append("восьмёрка" + nb + percent(s.pursuitEight)) }
-            if let cm = s.pursuitMeanCm { parts.append("до точки в среднем" + nb + SessionHistory.number(cm, 1) + nb + "см") }
+            if s.pursuitHorizontal != nil { parts.append(L("горизонталь") + nb + percent(s.pursuitHorizontal)) }
+            if s.pursuitVertical != nil { parts.append(L("вертикаль") + nb + percent(s.pursuitVertical)) }
+            if s.pursuitEight != nil { parts.append(L("восьмёрка") + nb + percent(s.pursuitEight)) }
+            if let cm = s.pursuitMeanCm { parts.append(L("до точки в среднем") + nb + SessionHistory.number(cm, 1) + nb + L("см")) }
             if s.pursuitLostShare != nil {
-                parts.append((s.byEye ? "без взгляда" : "без касания") + nb + percent(s.pursuitLostShare))
+                parts.append((s.byEye ? L("без взгляда") : L("без касания")) + nb + percent(s.pursuitLostShare))
             }
         }
         if withCalibration, let c = calibration(s) { parts.append(c) }
@@ -471,7 +463,7 @@ enum ReportText {
     }
 
     private static func milliseconds(_ v: Double?) -> String {
-        v.map { SessionHistory.number($0, 0) + nb + "мс" } ?? "–"
+        v.map { SessionHistory.number($0, 0) + nb + L("мс") } ?? "–"
     }
 
     /// The first and the newest of the plays that compare (SessionHistory.progress), per game.
@@ -479,48 +471,48 @@ enum ReportText {
         var out: [Trend] = []
         let m = SessionHistory.progress(plays, game: .meteors)
         if let a = m.first, let b = m.last {
-            var rows = [Trend.Row(label: "сбито", first: percent(a.burnedShare), last: percent(b.burnedShare))]
+            var rows = [Trend.Row(label: L("сбито"), first: percent(a.burnedShare), last: percent(b.burnedShare))]
             if a.holdShare != nil, b.holdShare != nil {
-                rows.append(Trend.Row(label: "удержание", first: percent(a.holdShare), last: percent(b.holdShare)))
+                rows.append(Trend.Row(label: L("удержание"), first: percent(a.holdShare), last: percent(b.holdShare)))
             }
             if a.decoyErrorShare != nil, b.decoyErrorShare != nil {
-                rows.append(Trend.Row(label: "ошибки на красных", first: percent(a.decoyErrorShare),
+                rows.append(Trend.Row(label: L("ошибки на красных"), first: percent(a.decoyErrorShare),
                                       last: percent(b.decoyErrorShare)))
             }
             if a.meanFirstLookSec != nil, b.meanFirstLookSec != nil {
-                rows.append(Trend.Row(label: b.byEye ? "первый взгляд" : "первое касание",
+                rows.append(Trend.Row(label: b.byEye ? L("первый взгляд") : L("первое касание"),
                                       first: seconds(a.meanFirstLookSec), last: seconds(b.meanFirstLookSec)))
             }
             if let x = a.slipsPerMeteor, let y = b.slipsPerMeteor {
-                rows.append(Trend.Row(label: "срывов на метеорит", first: SessionHistory.number(x, 1),
+                rows.append(Trend.Row(label: L("срывов на метеорит"), first: SessionHistory.number(x, 1),
                                       last: SessionHistory.number(y, 1)))
             }
-            let games = plural(m.count, "игра", "игры", "игр"), how = b.byEye ? "взглядом" : "пальцем"
-            let size = b.targetScale == nil ? "" : ", мелкие цели"
-            out.append(Trend(title: "Метеориты \(how)\(size), \(m.count) \(games)", rows: rows))
+            let games = plural(m.count, L("игра"), L("игры"), L("игр")), how = b.byEye ? L("взглядом") : L("пальцем")
+            let size = b.targetScale == nil ? "" : L(", мелкие цели")
+            out.append(Trend(title: L("Метеориты {0}{1}, {2} {3}", how, size, m.count, games), rows: rows))
         }
         let r = SessionHistory.progress(plays, game: .rhythm)
         if let a = r.first, let b = r.last {
-            var rows = [Trend.Row(label: "точность", first: percent(a.accuracy), last: percent(b.accuracy))]
+            var rows = [Trend.Row(label: L("точность"), first: percent(a.accuracy), last: percent(b.accuracy))]
             if a.timingDeviationMs != nil, b.timingDeviationMs != nil {
-                rows.append(Trend.Row(label: "отклонение от ритма", first: milliseconds(a.timingDeviationMs),
+                rows.append(Trend.Row(label: L("отклонение от ритма"), first: milliseconds(a.timingDeviationMs),
                                       last: milliseconds(b.timingDeviationMs)))
             }
             if a.holdShare != nil, b.holdShare != nil {
-                rows.append(Trend.Row(label: "удержание", first: percent(a.holdShare), last: percent(b.holdShare)))
+                rows.append(Trend.Row(label: L("удержание"), first: percent(a.holdShare), last: percent(b.holdShare)))
             }
-            let games = plural(r.count, "игра", "игры", "игр")
-            out.append(Trend(title: "Ритм, \(level(b)) уровень, \(r.count) \(games)", rows: rows))
+            let games = plural(r.count, L("игра"), L("игры"), L("игр"))
+            out.append(Trend(title: L("Ритм, {0} уровень, {1} {2}", level(b), r.count, games), rows: rows))
         }
         let w = SessionHistory.progress(plays, game: .pursuit)
         if let a = w.first, let b = w.last {
-            var rows = [Trend.Row(label: "удержание", first: percent(a.holdShare), last: percent(b.holdShare))]
+            var rows = [Trend.Row(label: L("удержание"), first: percent(a.holdShare), last: percent(b.holdShare))]
             if let x = a.pursuitMeanCm, let y = b.pursuitMeanCm {
-                rows.append(Trend.Row(label: "до точки в среднем", first: SessionHistory.number(x, 1) + nb + "см",
-                                      last: SessionHistory.number(y, 1) + nb + "см"))
+                rows.append(Trend.Row(label: L("до точки в среднем"), first: SessionHistory.number(x, 1) + nb + L("см"),
+                                      last: SessionHistory.number(y, 1) + nb + L("см")))
             }
-            let times = plural(w.count, "раз", "раза", "раз"), how = b.byEye ? "взглядом" : "пальцем"
-            out.append(Trend(title: "Разминка \(how), \(w.count) \(times)", rows: rows))
+            let times = plural(w.count, L("раз"), L("раза"), L("раз")), how = b.byEye ? L("взглядом") : L("пальцем")
+            out.append(Trend(title: L("Разминка {0}, {1} {2}", how, w.count, times), rows: rows))
         }
         return out
     }

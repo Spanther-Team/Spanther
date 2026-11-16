@@ -7,12 +7,12 @@ struct ResultView: View {
         // Landscape: the numbers on the left, the buttons on the right, so it fits in 390 pt of height.
         HStack(spacing: 28) {
             VStack(spacing: 14) {
-                Text("Калибровка готова").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                Text(L("Калибровка готова")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
                 if let r = app.report {
                     HStack(spacing: 10) {
-                        stat(r.meanErrorPt, String(format: "%.2f см · %.1f°", r.meanErrorCm, r.meanErrorDeg), "средний промах")
+                        stat(r.meanErrorPt, String(format: L("%.2f см · %.1f°"), r.meanErrorCm, r.meanErrorDeg), L("средний промах"))
                             .kineticEntrance(order: 1)
-                        stat(r.jitterPt, String(format: "%.2f см · %.1f°", r.jitterCm, r.jitterDeg), "дрожание")
+                        stat(r.jitterPt, String(format: L("%.2f см · %.1f°"), r.jitterCm, r.jitterDeg), L("дрожание"))
                             .kineticEntrance(order: 2)
                     }
                     Text(verdict(r)).font(Atlas.body).multilineTextAlignment(.center).foregroundStyle(Atlas.inkSoft)
@@ -27,9 +27,9 @@ struct ResultView: View {
             VStack(spacing: 12) {
                 Button { app.continueAfterCalibration() } label: { Text(nextTitle) }
                     .buttonStyle(AtlasPrimaryButton())
-                Button { app.beginCalibration(then: app.afterCalibration) } label: { Text("Откалибровать заново") }
+                Button { app.beginCalibration(then: app.afterCalibration) } label: { Text(L("Откалибровать заново")) }
                     .buttonStyle(AtlasSecondaryButton())
-                ShareLink(item: app.logURL) { Label("Экспорт CSV", systemImage: "square.and.arrow.up") }
+                ShareLink(item: app.logURL) { Label(L("Экспорт CSV"), systemImage: "square.and.arrow.up") }
                     .font(Atlas.caption.weight(.semibold))
                     .foregroundStyle(Atlas.ink)
             }
@@ -42,12 +42,12 @@ struct ResultView: View {
     /// Where the result leads: back to what asked for the calibration, or to the games after the session's first one.
     private var nextTitle: String {
         switch app.afterCalibration {
-        case .rhythm: return "К ритм-режиму"
-        case .pursuit: return "К разминке"
-        case .probe: return "К пробе"
-        case .game: return "Играть"
-        case .clinic: return "Дальше"
-        default: return "К играм"
+        case .rhythm: return L("К ритм-режиму")
+        case .pursuit: return L("К разминке")
+        case .probe: return L("К пробе")
+        case .game: return L("Играть")
+        case .clinic: return L("Дальше")
+        default: return L("К играм")
         }
     }
 
@@ -55,17 +55,17 @@ struct ResultView: View {
     /// never smaller than the floor the calibration's miss sets.
     private var zoneText: String {
         let scale = app.targetScale
-        guard scale < 1 else { return String(format: "Зона попадания: радиус метеорита + %.0f pt", app.hitMarginPt) }
-        return String(format: "Мелкие цели: зона попадания %.0f%% от обычной (радиус метеорита + %.0f pt), но не меньше %.0f pt",
+        guard scale < 1 else { return String(format: L("Зона попадания: радиус метеорита + %.0f pt"), app.hitMarginPt) }
+        return String(format: L("Мелкие цели: зона попадания %.0f%% от обычной (радиус метеорита + %.0f pt), но не меньше %.0f pt"),
                       scale * 100, app.hitMarginPt, app.zoneFloorPt)
     }
 
     private func verdict(_ r: AccuracyReport) -> String {
-        if r.meanErrorCm <= 1.0 { return "Отлично: цель для взрослого (1,0 см) достигнута." }
-        if r.meanErrorCm <= 1.5 { return "Хорошо: в пределах цели для ребёнка (1,5 см)." }
+        if r.meanErrorCm <= 1.0 { return L("Отлично: цель для взрослого (1,0 см) достигнута.") }
+        if r.meanErrorCm <= 1.5 { return L("Хорошо: в пределах цели для ребёнка (1,5 см).") }
         return app.nightVision
-            ? "Неточно. Без зрачков в темноте так бывает: поднеси телефон чуть ближе и откалибруй заново."
-            : "Неточно. Попробуй откалибровать заново при хорошем свете."
+            ? L("Неточно. Без зрачков в темноте так бывает: поднеси телефон чуть ближе и откалибруй заново.")
+            : L("Неточно. Попробуй откалибровать заново при хорошем свете.")
     }
 
     /// One of the check's numbers: it rolls up to its value in screen points, with cm and degrees under it.

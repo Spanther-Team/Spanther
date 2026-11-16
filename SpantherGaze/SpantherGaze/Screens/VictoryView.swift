@@ -39,7 +39,7 @@ struct VictoryView: View {
 
     private var rankPlate: some View {
         VStack(spacing: 8) {
-            Text("Итог · \(Self.gameName(summary.game))")
+            Text(L("Итог · {0}", Self.gameName(summary.game)))
                 .font(.system(size: 15, weight: .heavy, design: .rounded))
                 .foregroundStyle(Atlas.ink)
             RankStamp(rank: award.rank, reduceMotion: reduceMotion)
@@ -54,10 +54,10 @@ struct VictoryView: View {
                 }
                 if award.bestStreak >= 2 {
                     VStack(spacing: 0) {
-                        Text(summary.game == .pursuit ? "\(award.bestStreak * 2) с" : "×\(award.bestStreak)")
+                        Text(summary.game == .pursuit ? L("{0} с", award.bestStreak * 2) : "×\(award.bestStreak)")
                             .font(Atlas.display(24).monospacedDigit())
                             .foregroundStyle(Atlas.ink)
-                        Text(summary.game == .pursuit ? "на точке подряд" : "лучшая серия")
+                        Text(summary.game == .pursuit ? L("на точке подряд") : L("лучшая серия"))
                             .font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                     }
                 }
@@ -74,7 +74,7 @@ struct VictoryView: View {
                     .padding(.leading, 4)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Плюс \(award.rank.stars) звезды обсерватории")
+            .accessibilityLabel(L("Плюс {0} звезды обсерватории", award.rank.stars))
         }
         .frame(maxWidth: .infinity)
         .atlasPlate(padding: 14, accent: Self.rankColour(award.rank))
@@ -83,7 +83,7 @@ struct VictoryView: View {
     private var observatory: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Обсерватория").font(Atlas.display(22)).foregroundStyle(Atlas.ink)
+                Text(L("Обсерватория")).font(Atlas.display(22)).foregroundStyle(Atlas.ink)
                 Spacer(minLength: 8)
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill").foregroundStyle(Atlas.energy)
@@ -95,7 +95,7 @@ struct VictoryView: View {
                 .padding(.vertical, 3)
                 .atlasChip()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Звёзд: \(award.after.stars)")
+                .accessibilityLabel(L("Звёзд: {0}", award.after.stars))
             }
             LandmarkRow(open: award.after.landmarks, new: award.newLandmarks, reduceMotion: reduceMotion)
             Text(landmarkLine)
@@ -118,7 +118,7 @@ struct VictoryView: View {
             }
             HStack {
                 Spacer(minLength: 0)
-                Button(action: onContinue) { Text("Дальше") }
+                Button(action: onContinue) { Text(L("Дальше")) }
                     .buttonStyle(AtlasPrimaryButton())
                     .frame(maxWidth: 220)
             }
@@ -127,34 +127,34 @@ struct VictoryView: View {
     }
 
     private var landmarkLine: String {
-        if let i = award.newLandmarks.last { return "Открыто: «\(Landmark.all[i].name)»" }
-        guard let cost = award.after.nextLandmarkCost else { return "Вся обсерватория открыта!" }
-        let next = Landmark.all[min(award.after.landmarks, Landmark.all.count - 1)].name
-        return "До «\(next)» ещё \(cost - award.after.stars) ★"
+        if let i = award.newLandmarks.last { return L("Открыто: «{0}»", L(Landmark.all[i].name)) }
+        guard let cost = award.after.nextLandmarkCost else { return L("Вся обсерватория открыта!") }
+        let next = L(Landmark.all[min(award.after.landmarks, Landmark.all.count - 1)].name)
+        return L("До «{0}» ещё {1} ★", next, cost - award.after.stars)
     }
 
     private var cubLine: String {
-        if let g = award.newGifts.last { return "Мне подарок: \(PantherCub.giftNames[g])! Спасибо!" }
+        if let g = award.newGifts.last { return L("Мне подарок: {0}! Спасибо!", L(PantherCub.giftNames[g])) }
         switch award.rank {
-        case .s: return "Ррр! Вот это взгляд пантеры!"
-        case .a: return "Здорово! До ранга S совсем чуть-чуть."
-        case .b: return "Хорошее начало! Сыграем ещё?"
+        case .s: return L("Ррр! Вот это взгляд пантеры!")
+        case .a: return L("Здорово! До ранга S совсем чуть-чуть.")
+        case .b: return L("Хорошее начало! Сыграем ещё?")
         }
     }
 
     static func gameName(_ g: SessionSummary.Game) -> String {
         switch g {
-        case .meteors: return "Метеориты"
-        case .rhythm: return "Ритм"
-        case .pursuit: return "Разминка"
+        case .meteors: return L("Метеориты")
+        case .rhythm: return L("Ритм")
+        case .pursuit: return L("Разминка")
         }
     }
 
     static func shareLabel(_ g: SessionSummary.Game) -> String {
         switch g {
-        case .meteors: return "сбито"
-        case .rhythm: return "точность"
-        case .pursuit: return "рядом с точкой"
+        case .meteors: return L("сбито")
+        case .rhythm: return L("точность")
+        case .pursuit: return L("рядом с точкой")
         }
     }
 
@@ -198,7 +198,7 @@ private struct RankStamp: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Ранг \(rank.rawValue)")
+        .accessibilityLabel(L("Ранг {0}", rank.rawValue))
     }
 }
 
@@ -223,7 +223,7 @@ private struct Rosette: Shape {
     }
 }
 
-/// One of the Steppe Observatory's landmarks.
+/// One of the Steppe Observatory's landmarks. Its name is in Russian: shown through `L`.
 struct Landmark {
     let name: String
     let symbol: String
@@ -264,7 +264,7 @@ private struct LandmarkRow: View {
                                         depth: isOpen ? 3 : 1))
                     .selectedPop(isNew && popped)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(isOpen ? Landmark.all[i].name : "Закрыто")
+                    .accessibilityLabel(isOpen ? L(Landmark.all[i].name) : L("Закрыто"))
             }
         }
         .onAppear {
@@ -280,6 +280,7 @@ struct PantherCub: View {
     let gifts: Int
     let reduceMotion: Bool
 
+    /// In Russian: shown through `L`.
     static let giftNames = ["шарф", "звезда на шарф", "шапка исследователя", "подзорная труба"]
 
     var body: some View {
@@ -294,7 +295,7 @@ struct PantherCub: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Пантерёнок")
+        .accessibilityLabel(L("Пантерёнок"))
     }
 
     private static let fur = Color(red: 0.169, green: 0.149, blue: 0.133)      // 2B2622

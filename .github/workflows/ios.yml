@@ -477,6 +477,26 @@ jobs:
             if running; then pass "report $page: app running"; else fail "report $page: app not running"; fi
             xcrun simctl terminate "$UDID" "$BID" || true
           done
+          # The interface in English and Kazakh (-SpantherGateLanguage; the runs above are in Russian): the menu, the
+          # report pages, and the first seconds of the rhythm (its track list), the meteors and the warm-up.
+          for lang in en kk; do
+            xcrun simctl launch "$UDID" "$BID" -SpantherGate pass -SpantherGateLanguage "$lang"
+            sleep 8; shot "lang-$lang-menu"
+            if running; then pass "menu in $lang: app running"; else fail "menu in $lang: app not running"; fi
+            xcrun simctl terminate "$UDID" "$BID" || true
+            for page in summary history settings; do
+              xcrun simctl launch "$UDID" "$BID" -SpantherDemoReport "$page" -SpantherGateLanguage "$lang"
+              sleep 8; shot "lang-$lang-report-$page"
+              if running; then pass "report $page in $lang: app running"; else fail "report $page in $lang: app not running"; fi
+              xcrun simctl terminate "$UDID" "$BID" || true
+            done
+            for mode in rhythm eyes pursuit; do
+              xcrun simctl launch "$UDID" "$BID" -SpantherAutoplay "$mode" -SpantherGateLanguage "$lang"
+              sleep 5; shot "lang-$lang-$mode-a"; sleep 10; shot "lang-$lang-$mode-b"
+              if running; then pass "$mode in $lang: app running"; else fail "$mode in $lang: app not running"; fi
+              xcrun simctl terminate "$UDID" "$BID" || true
+            done
+          done
           cp ~/Library/Logs/DiagnosticReports/SpantherGaze* "$OUT/" 2>/dev/null || true
           cat "$OUT/checks.txt"
       - name: Menu and rhythm track list on the smallest screen (iPhone SE, 4.7 inch)
@@ -540,6 +560,24 @@ jobs:
             fi
             xcrun simctl terminate "$SE" "$BID" || true
           done
+          # Kazakh, the longest of the three languages, on the smallest screen: the menu and the history.
+          xcrun simctl launch "$SE" "$BID" -SpantherGate pass -SpantherGateLanguage kk
+          sleep 8
+          xcrun simctl io "$SE" screenshot --type=png "$OUT/tmp.png" >/dev/null 2>&1 \
+            && sips -s format jpeg -s formatOptions 80 -Z 1200 "$OUT/tmp.png" --out "$OUT/00-menu-kk-se.jpg" >/dev/null 2>&1
+          rm -f "$OUT/tmp.png"
+          xcrun simctl terminate "$SE" "$BID" || true
+          xcrun simctl launch "$SE" "$BID" -SpantherDemoReport history -SpantherGateLanguage kk
+          sleep 8
+          xcrun simctl io "$SE" screenshot --type=png "$OUT/tmp.png" >/dev/null 2>&1 \
+            && sips -s format jpeg -s formatOptions 80 -Z 1200 "$OUT/tmp.png" --out "$OUT/report-history-kk-se.jpg" >/dev/null 2>&1
+          rm -f "$OUT/tmp.png"
+          if xcrun simctl spawn "$SE" launchctl list | grep -q "UIKitApplication:$BID"; then
+            echo "PASS Kazakh history on iPhone SE: app running" >> "$OUT/checks.txt"
+          else
+            echo "FAIL Kazakh history on iPhone SE: app not running" >> "$OUT/checks.txt"
+          fi
+          xcrun simctl terminate "$SE" "$BID" || true
       - name: Publish to the ci-screenshots branch
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:

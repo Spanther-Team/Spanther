@@ -3,7 +3,7 @@ import QuartzCore
 import SwiftUI
 import UIKit
 
-/// The start screen's languages. The rest of the app is in Russian.
+/// The app's languages, chosen on the start screen or with the menu's language chip (`Loc`).
 enum GateLanguage: String, CaseIterable, Identifiable {
     case ru, kk, en
 
@@ -24,6 +24,30 @@ enum GateLanguage: String, CaseIterable, Identifiable {
             if let l = GateLanguage(rawValue: String(id.prefix(2))) { return l }
         }
         return .ru
+    }
+
+    /// The short name on the menu's language chip.
+    var short: String {
+        switch self {
+        case .ru: return "РУС"
+        case .kk: return "ҚАЗ"
+        case .en: return "ENG"
+        }
+    }
+
+    static let storageKey = "StartGate.language"
+
+    /// The language chosen before (kept between launches), the iPhone's otherwise. Debug builds take
+    /// `-SpantherGateLanguage ru|kk|en` first, for the CI screenshots.
+    static var saved: GateLanguage {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-SpantherGateLanguage"), i + 1 < args.count,
+           let l = GateLanguage(rawValue: args[i + 1]) { return l }
+        // The CI bots and the report shots are in Russian unless told otherwise (the Simulator's own is English).
+        if args.contains(where: { ["-SpantherAutoplay", "-SpantherDemoReport", "-SpantherGate"].contains($0) }) { return .ru }
+        #endif
+        return UserDefaults.standard.string(forKey: storageKey).flatMap { GateLanguage(rawValue: $0) } ?? .device
     }
 }
 
@@ -59,8 +83,12 @@ final class StartGate: ObservableObject {
     @Published private(set) var passed = false
     @Published private(set) var camera: CameraAccess
     /// Kept between launches.
+    /// The whole app's language (`Loc`).
     @Published var language: GateLanguage {
-        didSet { UserDefaults.standard.set(language.rawValue, forKey: Self.languageKey) }
+        didSet {
+            Loc.language = language
+            UserDefaults.standard.set(language.rawValue, forKey: GateLanguage.storageKey)
+        }
     }
 
     /// The screen showed the camera as refused. Kept between launches: iOS ends an app whose camera access is changed
@@ -71,11 +99,10 @@ final class StartGate: ObservableObject {
     }
     /// The state was set by a launch argument (Debug): the screen stays as it is.
     private var frozen = false
-    private static let languageKey = "StartGate.language"
     private static let waitingKey = "StartGate.waitingForCamera"
 
     init() {
-        language = UserDefaults.standard.string(forKey: Self.languageKey).flatMap { GateLanguage(rawValue: $0) } ?? .device
+        language = Loc.language
         camera = CameraAccess.current
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -83,7 +110,6 @@ final class StartGate: ObservableObject {
             guard let i = args.firstIndex(of: key), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        if let l = value("-SpantherGateLanguage").flatMap({ GateLanguage(rawValue: $0) }) { language = l }
         if value("-SpantherAutoplay") != nil || value("-SpantherDemoReport") != nil { passed = true }
         if let forced = value("-SpantherGate") {
             frozen = true
