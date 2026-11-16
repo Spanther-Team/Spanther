@@ -23,16 +23,7 @@ struct ResultView: View {
             }
             .frame(maxWidth: .infinity)
             VStack(spacing: 12) {
-                Button {
-                    switch app.afterCalibration {
-                    case .rhythm: app.openRhythm()
-                    case .pursuit: app.openPursuit(byEye: true)
-                    default: app.route = .game
-                    }
-                } label: {
-                    Text(app.afterCalibration == .rhythm ? "К ритм-режиму"
-                         : app.afterCalibration == .pursuit ? "К разминке" : "Играть")
-                }
+                Button { app.continueAfterCalibration() } label: { Text(nextTitle) }
                     .buttonStyle(AtlasPrimaryButton())
                 Button { app.beginCalibration(then: app.afterCalibration) } label: { Text("Откалибровать заново") }
                     .buttonStyle(AtlasSecondaryButton())
@@ -44,6 +35,18 @@ struct ResultView: View {
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 24)
+    }
+
+    /// Where the result leads: back to what asked for the calibration, or to the games after the session's first one.
+    private var nextTitle: String {
+        switch app.afterCalibration {
+        case .rhythm: return "К ритм-режиму"
+        case .pursuit: return "К разминке"
+        case .probe: return "К пробе"
+        case .game: return "Играть"
+        case .clinic: return "Дальше"
+        default: return "К играм"
+        }
     }
 
     /// The meteors' hit zone in words (screen pt). With small targets it is the regular zone times the scale, and

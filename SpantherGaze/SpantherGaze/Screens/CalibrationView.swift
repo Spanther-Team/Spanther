@@ -34,10 +34,7 @@ struct CalibrationView: View {
                         .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
                         .frame(width: 240)
                         .position(x: size.x * 0.3, y: 34)
-                    Button {
-                        app.cancelCollecting()
-                        app.route = .menu
-                    } label: { Text("Отмена").font(.footnote.bold()).padding(.horizontal, 18) }
+                    Button { app.cancelCalibration() } label: { Text("Отмена").font(.footnote.bold()).padding(.horizontal, 18) }
                         .buttonStyle(AtlasSecondaryButton())
                         .fixedSize()
                         .position(x: size.x * 0.7, y: size.y - 40)
@@ -59,7 +56,7 @@ struct CalibrationView: View {
                 .font(Atlas.display(28))
                 .foregroundStyle(Atlas.ink)
             Text(kind == .calibration
-                 ? "Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать."
+                 ? "Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать. Калибровка одна на всё занятие."
                  : "Ещё 13 точек в новых местах. По ним игра узнает, насколько точно видит твой взгляд.")
                 .font(Atlas.body)
                 .multilineTextAlignment(.center).foregroundStyle(Atlas.inkSoft)
@@ -75,7 +72,7 @@ struct CalibrationView: View {
                 Text(faceLine).font(Atlas.caption).foregroundStyle(status.faceFound ? Atlas.ink : Atlas.vermilion)
             }
             HStack(spacing: 12) {
-                Button { app.route = .menu } label: { Text("Назад") }
+                Button { app.cancelCalibration() } label: { Text("Назад") }
                     .buttonStyle(AtlasSecondaryButton())
                 Button { started = true } label: { Text("Начать") }
                     .buttonStyle(AtlasPrimaryButton())

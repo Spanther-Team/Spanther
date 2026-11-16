@@ -15,7 +15,7 @@ Native SPANTHER prototype: SwiftUI + SpriteKit + ARKit face tracking. Meteors fa
    If Xcode refuses the project file, run `brew install xcodegen && xcodegen generate` in this folder and open the generated project.
 2. Target SpantherGaze → Signing & Capabilities → choose your Team (a free Apple ID works for your own phone). Change the bundle id if Xcode asks.
 3. Connect the iPhone (TrueDepth camera or A12 chip and newer), select it, press Run.
-4. The first time, allow the camera. On the phone, trust the developer in Settings → General → VPN & Device Management.
+4. The first time, press «Продолжить» on the start screen and allow the camera. On the phone, trust the developer in Settings → General → VPN & Device Management.
 
 Unit tests: `cd GazeCore && swift test` (Mac or Linux). Camera code only works on a device; ARKit face tracking does not run in the Simulator.
 
@@ -142,7 +142,15 @@ Menu, the «Занятия» button at the top. For the specialist and the paren
 - **The pop** (`GazeCore/Sources/Feel`, `Screens/StoneNode.swift`, `Screens/SceneArt.swift`, `Audio/`): sky-stones baked with Core Graphics (three tones, an ink line), engraved rings that align over the hold, cracks that grow from the gaze point along the edges the stone will burst on (Voronoi pre-fracture at hold start, off the main thread), a 60 ms squash, shards under a small integrator, dust and motes into a jar. Four sound layers (crack, pop, modal chime on a D major pentatonic ladder, crumble) synthesised at the start of a play and played on the app's one `AVAudioEngine` (12 voices, a peak limiter; the pad and the wink test's clicks moved onto it), and one `CHHapticEngine` with charge, crack and thud players.
 - **Tracking and rendering**: ARKit runs the smallest 60 fps format; the face's square is copied into a buffer of our own pool for Vision through a latest-only mailbox, so the ARFrame is let go at once; signposts mark the frame, the crop and Vision. The meteor screen is one opaque SpriteKit view that draws the garden itself (baked layers and a wind shader).
 
+## Start screen and the session's one calibration
+
+- **Start screen** (`App/StartGate.swift`), at every launch, after the force update screen and before anything else: what the app does with the camera and data, the privacy policy link, and why the camera is needed, in Russian, Kazakh and English (switch on top, first match of the iPhone's languages, kept between launches). «Продолжить» asks for the camera when it was never asked. While the camera is refused or restricted the warning stays, the button opens Settings and nothing leads on to the menu; iOS ends the app when the camera permission changes in Settings, so the next launch, or the return to the front, goes on by itself. Face tracking (and so the camera) starts only behind this screen. An iPhone without face tracking passes with a finger-only note. The system's own camera question (`NSCameraUsageDescription`) stays in Russian.
+- **One calibration per session** (`AppModel.calibration`, a `SessionCalibration`): made right after the start screen and shared by the meteors, the rhythm mode, the warm-up and the probe. The modes no longer calibrate on their own; they ask only when there is none (the first one was left with «Назад»). «Перекалибровать» on the menu and «Калибровка» in the meteors' pause make a new one; leaving it before its check dots end, or a fit that fails, keeps the old one with what the aim had learned and its CSV. Another child on «Кто играет?» drops the calibration and starts the new child's own one at once; the probe runs only on the playing child's calibration. Night vision drops it too, since the model then reads other features.
+- Debug launch arguments: `-SpantherGate pass|ask|denied|restricted|allowed|unsupported` (`pass` skips the screen, the others hold it in that state for screenshots) and `-SpantherGateLanguage ru|kk|en`. `-SpantherAutoplay` and `-SpantherDemoReport` skip the screen and the session's calibration. CI shoots the screen in each state (`gate-*.jpg`, `gate-denied-kk-se.jpg` on the iPhone SE).
+
 ## Unverified on device
+
+- The start screen and the one calibration: the camera question from the button, the way back from Settings, the first calibration right after the screen, and whether the menu's recalibration is found when the player moves. Simulator screenshots only. The Kazakh copy needs a native speaker's read.
 
 - The whole clinician build: the probe on a real face, the quality gate's thresholds on real sessions, Face ID, the export files opened on a computer.
 - The pop: its look on the phone, the lock-to-sound latency (goal: 20 ms or less), the bank's build time and memory (about 8 MB), whether 7 of 10 children prefer it.
