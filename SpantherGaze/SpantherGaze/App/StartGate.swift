@@ -219,8 +219,8 @@ struct GateCopy {
         openSettings: "Open Settings")
 }
 
-/// The start screen in the Steppe Observatory look of the atlas: paper and ink, amber inlay on a brass astrolabe
-/// behind, one vermilion button. The mark, the title and the language switch on top; what the app does with the
+/// The start screen in the sunlit Steppe Observatory: the sky and the far grass, a brass astrolabe behind, cream
+/// plates on gold and sky slabs, one emerald button; the plates and the button spring in one after another. The mark, the title and the language switch on top; what the app does with the
 /// camera and why it needs it on two plates; under them the camera's state and the button. While the camera is
 /// refused, the warning stays and the button leads to Settings: there is no way on to the menu.
 struct StartGateView: View {
@@ -232,7 +232,7 @@ struct StartGateView: View {
 
     var body: some View {
         ZStack {
-            Atlas.paper.ignoresSafeArea()
+            SunlitBackdrop().ignoresSafeArea()
             Astrolabe()
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
@@ -250,15 +250,18 @@ struct StartGateView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             HStack(alignment: .top, spacing: 12) {
-                plate(symbol: "lock.shield", title: t.privacyTitle, text: t.privacy) {
+                plate(symbol: "lock.shield", title: t.privacyTitle, text: t.privacy, accent: Atlas.gold) {
                     Link(t.policy, destination: MenuView.privacyPolicyURL)
                         .font(Atlas.caption.weight(.semibold))
                         .foregroundStyle(Atlas.ink)
                         .frame(minHeight: 32)
                 }
-                plate(symbol: "eye", title: t.cameraTitle, text: gate.camera == .unsupported ? t.unsupported : t.camera) {
+                .kineticEntrance(order: 1)
+                plate(symbol: "eye", title: t.cameraTitle, text: gate.camera == .unsupported ? t.unsupported : t.camera,
+                      accent: Atlas.sky) {
                     EmptyView()
                 }
+                .kineticEntrance(order: 2)
             }
             .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .center, spacing: 16) {
@@ -272,6 +275,7 @@ struct StartGateView: View {
                 }
                 .buttonStyle(AtlasPrimaryButton())
                 .frame(width: 260)
+                .kineticEntrance(order: 3)
             }
         }
         .padding(.horizontal, 24)
@@ -303,29 +307,27 @@ struct StartGateView: View {
     }
 
     private var languageSwitch: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 8) {
             ForEach(GateLanguage.allCases) { l in
                 let on = l == gate.language
                 Button { gate.language = l } label: {
                     Text(l.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(on ? Atlas.onAccent : Atlas.ink)
+                        .font(.system(size: 15, weight: on ? .heavy : .semibold, design: .rounded))
+                        .foregroundStyle(Atlas.ink)
                         .lineLimit(1)
                         .fixedSize()
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 14)
                         .frame(minHeight: 40)
-                        .background(on ? Atlas.ink : Color.clear, in: Capsule())
+                        .atlasChip(fill: on ? Atlas.gold : Atlas.paper)
                 }
+                .selectedPop(on)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(2)
-        .background(Atlas.paper.opacity(0.88), in: Capsule())
-        .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
     }
 
-    /// One plate: an amber-inlaid ring with the symbol, the title, the words, and what goes under them.
-    private func plate<Extra: View>(symbol: String, title: String, text: String,
+    /// One plate: the symbol on a disc of the plate's colour, the title, the words, and what goes under them.
+    private func plate<Extra: View>(symbol: String, title: String, text: String, accent: Color,
                                     @ViewBuilder extra: () -> Extra) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -333,7 +335,8 @@ struct StartGateView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Atlas.ink)
                     .frame(width: 36, height: 36)
-                    .overlay(Circle().stroke(Atlas.amber, lineWidth: 1.5))
+                    .background(Circle().fill(accent))
+                    .overlay(Circle().stroke(Atlas.ink, lineWidth: Atlas.line))
                     .accessibilityHidden(true)
                 Text(title)
                     .font(Atlas.title)
@@ -348,7 +351,7 @@ struct StartGateView: View {
             extra()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .atlasPlate(padding: 12)
+        .atlasPlate(padding: 12, accent: accent)
     }
 
     /// The camera's state beside the button. Refused: the warning, in vermilion, as long as it lasts.
@@ -377,6 +380,8 @@ struct StartGateView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Atlas.vermilion)
+        .padding(10)
+        .background(InkSlab(shape: CutPlate(cut: 10), fill: Atlas.paper, depth: 3))
         .accessibilityElement(children: .combine)
     }
 
@@ -386,7 +391,10 @@ struct StartGateView: View {
             Text(s).fixedSize(horizontal: false, vertical: true)
         }
         .font(Atlas.caption)
-        .foregroundStyle(Atlas.inkSoft)
+        .foregroundStyle(Atlas.ink)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(InkSlab(shape: CutPlate(cut: 8), fill: Atlas.paper, depth: 3))
     }
 }
 

@@ -64,12 +64,13 @@ private struct PlaySummaryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        ForEach(ReportText.numbers(s), id: \.self) { n in
+                        ForEach(Array(ReportText.numbers(s).enumerated()), id: \.element) { k, n in
                             ReportTile(big: n.big, small: n.small, label: n.label)
+                                .kineticEntrance(order: k)
                         }
                     }
                     Text(ReportText.results(s, numbers: false, calibration: false))
-                        .font(.system(size: 15, design: .serif))
+                        .font(Atlas.metric(15, weight: .regular))
                         .foregroundStyle(Atlas.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     VStack(alignment: .leading, spacing: 3) {
@@ -114,7 +115,7 @@ private struct ReportTile: View {
             Text(label).font(Atlas.caption).foregroundStyle(Atlas.inkSoft).lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
-        .atlasPlate(padding: 10)
+        .atlasPlate(padding: 10, accent: Atlas.sky)
     }
 }
 
@@ -169,7 +170,7 @@ private struct HistoryView: View {
                     .foregroundStyle(Atlas.inkSoft)
                     .textCase(.uppercase)
                 TextField("Например, К-07", text: $app.childCode)
-                    .font(.system(size: 20, weight: .semibold, design: .serif))
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .foregroundStyle(Atlas.ink)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
@@ -177,8 +178,8 @@ private struct HistoryView: View {
                     .focused($editingCode)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 44)
-                    .background(Atlas.paper.opacity(0.92), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Atlas.ink.opacity(editingCode ? 0.5 : 0.2), lineWidth: 1))
+                    .background(InkSlab(shape: CutPlate(cut: 10), fill: editingCode ? Atlas.cream : Atlas.paperShade,
+                                        depth: editingCode ? 4 : 2))
                 Text("Новые игры сохраняются под этим кодом. Без имени: кто под каким кодом, знает только центр.")
                     .font(Atlas.caption)
                     .foregroundStyle(Atlas.inkSoft)
@@ -262,7 +263,7 @@ private struct HistoryView: View {
                 }
             }
             Text(ReportText.results(s))
-                .font(.system(size: 15, design: .serif))
+                .font(Atlas.metric(15, weight: .regular))
                 .foregroundStyle(Atlas.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }

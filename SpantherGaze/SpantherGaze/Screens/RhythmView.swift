@@ -56,7 +56,9 @@ private struct RhythmPicker: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(spacing: 4) {
-                    ForEach(app.rhythmTracks, id: \.id) { t in trackRow(t) }
+                    ForEach(Array(app.rhythmTracks.enumerated()), id: \.element.id) { k, t in
+                        trackRow(t).kineticEntrance(order: k)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -92,7 +94,7 @@ private struct RhythmPicker: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LivingBackground(growFrom: app.launchTime).ignoresSafeArea())
+        .background(ZStack { SunlitBackdrop(); LivingBackground(growFrom: app.launchTime) }.ignoresSafeArea())
     }
 
     private func trackRow(_ t: RhythmTrack) -> some View {
@@ -116,7 +118,7 @@ private struct RhythmPicker: View {
                     ForEach(0..<3, id: \.self) { i in
                         Image(systemName: i < stars ? "star.fill" : "star")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(i < stars ? Atlas.vermilion : Atlas.missGrey)
+                            .foregroundStyle(i < stars ? Atlas.energy : Atlas.missGrey)
                     }
                 }
                 .accessibilityLabel("Лучший результат: звёзд \(stars) из 3")
@@ -124,10 +126,12 @@ private struct RhythmPicker: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .frame(minHeight: 56)
-            .background(selected ? Atlas.paperShade : .clear, in: RoundedRectangle(cornerRadius: 12))
+            // The chosen track sits on a gold slant.
+            .background { if selected { InkSlab(shape: Slant(lean: 10), fill: Atlas.gold, depth: 4) } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .animation(Atlas.snap, value: selected)
     }
 
     private func levelRow(_ l: RhythmLevel) -> some View {
@@ -136,15 +140,20 @@ private struct RhythmPicker: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Atlas.levelName(l))
-                        .font(.system(size: 17, weight: selected ? .semibold : .regular, design: .serif))
+                        .font(.system(size: 17, weight: selected ? .heavy : .medium, design: .rounded))
                         .foregroundStyle(Atlas.ink)
                     Text(Atlas.levelHint(l)).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Atlas.vermilion)
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(Atlas.ink)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Atlas.emerald))
+                    .overlay(Circle().stroke(Atlas.ink, lineWidth: Atlas.line))
+                    .scaleEffect(selected ? 1 : 0.4)
                     .opacity(selected ? 1 : 0)
+                    .animation(Atlas.snap, value: selected)
             }
             .frame(minHeight: 48)
             .contentShape(Rectangle())
@@ -202,7 +211,7 @@ private struct ConstellationPreview: View {
                 g.fill(Atlas.star(p, i == 0 ? 7 : 5), with: .color(i == 0 ? Atlas.vermilion : Atlas.ink))
             }
         }
-        .background(Atlas.paperShade, in: RoundedRectangle(cornerRadius: 12))
+        .background(InkSlab(shape: CutPlate(cut: 12), fill: Atlas.paperShade, depth: 3))
     }
 }
 
@@ -411,7 +420,7 @@ private struct RhythmPlayView: View {
             var gg = g
             gg.opacity = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.3
             let p = cg(s.points[r.index])
-            gg.draw(Text(text).font(.system(size: 15, weight: .semibold, design: .serif)).foregroundColor(Atlas.vermilion),
+            gg.draw(Text(text).font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(Atlas.vermilion),
                     at: CGPoint(x: p.x, y: p.y + dialR + 16 + 6 * CGFloat(age)))
         }
     }
@@ -461,7 +470,7 @@ private struct RhythmPlayView: View {
             var gg = g
             gg.opacity = 1 - age / 0.6
             let color = j == .perfect ? Atlas.vermilion : j == .miss ? Atlas.missGrey : Atlas.ink
-            gg.draw(Text(Atlas.word(j)).font(.system(size: 17, weight: .semibold, design: .serif)).foregroundColor(color),
+            gg.draw(Text(Atlas.word(j)).font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundColor(color),
                     at: CGPoint(x: p.x, y: p.y - dialR - 18 - 12 * age / 0.6))
         }
     }
@@ -566,7 +575,8 @@ private struct RhythmResults: View {
                 HStack(spacing: 0) {
                     ForEach(Judgement.allCases, id: \.self) { k in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(j.count(k))").font(Atlas.title).foregroundStyle(k == .perfect ? Atlas.vermilion : Atlas.ink)
+                            Text("\(j.count(k))").font(Atlas.display(24)).monospacedDigit()
+                                .foregroundStyle(k == .perfect ? Atlas.energy : Atlas.ink)
                             Text(Atlas.word(k)).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -599,7 +609,7 @@ private struct RhythmResults: View {
         .padding(.horizontal, 32)
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LivingBackground(growFrom: app.launchTime).ignoresSafeArea())
+        .background(ZStack { SunlitBackdrop(); LivingBackground(growFrom: app.launchTime) }.ignoresSafeArea())
         .onAppear { exportURL = app.rhythmSummary.flatMap { SessionStore.exportCSV(play: $0) } }
     }
 
@@ -676,7 +686,7 @@ private struct ConstellationPlate: View {
             }
             g.stroke(marks, with: .color(Atlas.ink.opacity(0.4)), lineWidth: 1)
         }
-        .background(Atlas.paperShade, in: RoundedRectangle(cornerRadius: 12))
+        .background(InkSlab(shape: CutPlate(cut: 14), fill: Atlas.paperShade, depth: 4))
         .accessibilityLabel("Созвездие этой игры")
     }
 }

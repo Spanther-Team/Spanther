@@ -10,8 +10,10 @@ struct ResultView: View {
                 Text("Калибровка готова").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
                 if let r = app.report {
                     HStack(spacing: 10) {
-                        stat(String(format: "%.0f pt", r.meanErrorPt), String(format: "%.2f см · %.1f°", r.meanErrorCm, r.meanErrorDeg), "средний промах")
-                        stat(String(format: "%.0f pt", r.jitterPt), String(format: "%.2f см · %.1f°", r.jitterCm, r.jitterDeg), "дрожание")
+                        stat(r.meanErrorPt, String(format: "%.2f см · %.1f°", r.meanErrorCm, r.meanErrorDeg), "средний промах")
+                            .kineticEntrance(order: 1)
+                        stat(r.jitterPt, String(format: "%.2f см · %.1f°", r.jitterCm, r.jitterDeg), "дрожание")
+                            .kineticEntrance(order: 2)
                     }
                     Text(verdict(r)).font(Atlas.body).multilineTextAlignment(.center).foregroundStyle(Atlas.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -66,9 +68,10 @@ struct ResultView: View {
             : "Неточно. Попробуй откалибровать заново при хорошем свете."
     }
 
-    private func stat(_ big: String, _ small: String, _ label: String) -> some View {
+    /// One of the check's numbers: it rolls up to its value in screen points, with cm and degrees under it.
+    private func stat(_ pt: Double, _ small: String, _ label: String) -> some View {
         VStack(spacing: 4) {
-            Text(big).font(Atlas.display(30)).monospacedDigit().foregroundStyle(Atlas.ink)
+            RollUp(value: pt) { String(format: "%.0f pt", $0) }.foregroundStyle(Atlas.ink)
             Text(small).font(Atlas.caption).monospacedDigit().foregroundStyle(Atlas.ink)
             Text(label).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
         }

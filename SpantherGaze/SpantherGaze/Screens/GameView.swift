@@ -74,30 +74,31 @@ private struct HUDView: View {
     /// The play has red signs: the top row counts the looks at them.
     let decoysOn: Bool
     let onEnergyTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             VStack(spacing: 10) {
                 HStack(spacing: 8) {
-                    pill { Text("\(hud.score)").font(Atlas.title.monospacedDigit()) }
+                    pill { Text("\(hud.score)").font(Atlas.display(20)).rolling(hud.score) }
                     pill {
                         HStack(spacing: 4) {
                             ForEach(0..<5, id: \.self) { i in
-                                Circle().fill(i < hud.shields ? Atlas.ink : .clear)
-                                    .overlay(Circle().stroke(Atlas.ink.opacity(0.5), lineWidth: 1))
+                                Circle().fill(i < hud.shields ? Atlas.sky : .clear)
+                                    .overlay(Circle().stroke(Atlas.ink, lineWidth: 1.5))
                                     .frame(width: 10, height: 10)
                             }
                         }
                         .accessibilityLabel("Щиты: \(hud.shields) из 5")
                     }
-                    pill { Text("Уровень \(hud.level)").font(.system(size: 15, weight: .semibold, design: .serif)) }
+                    pill { Text("Уровень \(hud.level)").font(.system(size: 15, weight: .heavy, design: .rounded)).rolling(hud.level) }
                     if decoysOn {
                         // The count of looks at red signs: the sign itself and a number, no word and no alarm.
                         pill {
                             HStack(spacing: 6) {
                                 RedSign().frame(width: 14, height: 14)
-                                Text("\(hud.decoyErrors)").font(.system(size: 15, weight: .semibold, design: .serif))
-                                    .monospacedDigit()
+                                Text("\(hud.decoyErrors)").font(.system(size: 15, weight: .heavy, design: .rounded))
+                                    .rolling(hud.decoyErrors)
                             }
                         }
                         .accessibilityElement(children: .ignore)
@@ -131,11 +132,10 @@ private struct HUDView: View {
                 // The quiet line of the red signs: it fades in and out, nothing flashes.
                 if let line = hud.notice, !paused {
                     Text(line)
-                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(Atlas.ink)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Atlas.paper.opacity(0.92), in: Capsule())
-                        .overlay(Capsule().stroke(Atlas.vermilion.opacity(0.45), lineWidth: 1))
+                        .padding(.horizontal, 18).padding(.vertical, 8)
+                        .atlasChip(border: Atlas.vermilion)
                         .transition(.opacity)
                         .allowsHitTesting(false)
                 }
@@ -146,13 +146,20 @@ private struct HUDView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.45), value: hud.notice)
+            // The level's banner slams in on the slant from the left and leaves to the right.
             if let b = hud.banner {
-                Text(b).font(Atlas.title).foregroundStyle(Atlas.ink)
-                    .atlasPlate(padding: 14)
+                Text(b).font(Atlas.display(26)).foregroundStyle(Atlas.ink)
+                    .padding(.horizontal, 28).padding(.vertical, 12)
+                    .background(InkSlab(shape: Slant(lean: 16), fill: Atlas.gold, depth: 5))
+                    .rotationEffect(.degrees(-3))
+                    .transition(reduceMotion ? AnyTransition.opacity
+                                : .asymmetric(insertion: .offset(x: -420).combined(with: .opacity),
+                                              removal: .offset(x: 420).combined(with: .opacity)))
+                    .allowsHitTesting(false)
             }
             if hud.lookBack && !paused {
                 Text("Посмотри на экран").font(Atlas.display(26)).foregroundStyle(Atlas.ink)
-                    .atlasPlate(padding: 16)
+                    .atlasPlate(padding: 16, accent: Atlas.sky)
             }
             if paused {
                 VStack(spacing: 12) {
@@ -170,18 +177,19 @@ private struct HUDView: View {
                     Button(action: onQuit) { Text("Главное меню") }.buttonStyle(AtlasSecondaryButton())
                 }
                 .frame(maxWidth: 320)
-                .atlasPlate(padding: 22)
+                .atlasPlate(padding: 22, accent: Atlas.sky)
                 .padding(16)
+                .kineticEntrance()
             }
         }
+        .animation(reduceMotion ? nil : Atlas.snap, value: hud.banner)
     }
 
     private func pill<C: View>(@ViewBuilder _ c: () -> C) -> some View {
-        c().font(.system(size: 15, weight: .semibold))
-            .padding(.horizontal, 12).padding(.vertical, 6)
+        c().font(.system(size: 15, weight: .bold, design: .rounded))
+            .padding(.horizontal, 14).padding(.vertical, 6)
             .frame(minHeight: 36)
-            .background(Atlas.paper.opacity(0.88), in: Capsule())
-            .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
+            .atlasChip()
             .foregroundStyle(Atlas.ink)
     }
 }
@@ -219,21 +227,20 @@ private struct EnergyBar: View {
                 .foregroundStyle(energy > 0 ? Atlas.ink : Atlas.vermilion)
             HStack(spacing: 3) {
                 ForEach(0..<max, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(i < energy ? Atlas.ink : Atlas.ink.opacity(0.12))
+                    Slant(lean: 3)
+                        .fill(i < energy ? Atlas.energy : Atlas.ink.opacity(0.1))
+                        .overlay(Slant(lean: 3).strokeBorder(Atlas.ink, lineWidth: 1.5))
                         .frame(height: 12)
                 }
             }
-            Text("\(energy)").font(.system(size: 15, weight: .semibold, design: .serif)).monospacedDigit()
+            Text("\(energy)").font(.system(size: 15, weight: .heavy, design: .rounded)).rolling(energy)
                 .foregroundStyle(Atlas.ink)
                 .frame(minWidth: 22, alignment: .trailing)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(Atlas.paper.opacity(0.88), in: Capsule())
-        .overlay(Capsule().stroke(needsReload ? Atlas.vermilion : Atlas.ink.opacity(glow ? 0.6 : 0.14),
-                                  lineWidth: needsReload || glow ? 2 : 1))
-        .scaleEffect(glow ? 1.04 : 1)
-        .contentShape(Capsule())
+        .atlasChip(fill: glow ? Atlas.gold : Atlas.paper, border: needsReload ? Atlas.vermilion : Atlas.ink)
+        .scaleEffect(glow ? 1.06 : 1)
+        .contentShape(Rectangle())
         .onTapGesture { if touchMode { onTap() } }
         .accessibilityLabel("Энергия \(energy) из \(max)")
         .onChange(of: pulse) { _ in
@@ -269,8 +276,7 @@ private struct ReloadHint: View {
             .font(.title2)
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(Atlas.paper.opacity(0.92), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Atlas.vermilion.opacity(0.8), lineWidth: 1.5))
+        .atlasPlate(padding: 0, accent: Atlas.energy)
         .allowsHitTesting(false)
     }
 }

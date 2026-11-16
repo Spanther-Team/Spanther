@@ -54,40 +54,56 @@ struct SpantherGazeApp: App {
 
 struct RootView: View {
     @EnvironmentObject var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             background
-            switch app.route {
-            case .menu: MenuView()
-            case .calibration: CalibrationView(kind: .calibration)
-            case .check: CalibrationView(kind: .check)
-            case .result: ResultView()
-            case .game: GameView()
-            case .winkTest: WinkTestView()
-            case .rhythm: RhythmView()
-            case .pursuit: PursuitView()
-            case .clinic: ClinicView()
-            case .probe: ProbeView()
+            Group {
+                switch app.route {
+                case .menu: MenuView()
+                case .calibration: CalibrationView(kind: .calibration)
+                case .check: CalibrationView(kind: .check)
+                case .result: ResultView()
+                case .game: GameView()
+                case .winkTest: WinkTestView()
+                case .rhythm: RhythmView()
+                case .pursuit: PursuitView()
+                case .clinic: ClinicView()
+                case .probe: ProbeView()
+                }
             }
+            .transition(screenTransition)
             if app.showDebug { DebugOverlay().allowsHitTesting(false) }
         }
+        // A new screen springs in from the right; the old one fades under it. Never into the probe: its 90 seconds
+        // start with the screen and must start on a still page.
+        .animation(app.route == .probe ? nil : Atlas.snap, value: app.route)
         // Ink on paper everywhere but the wink test, which keeps the old dark look.
         .preferredColorScheme(app.route == .winkTest ? .dark : .light)
     }
 
-    /// Paper with the living garden behind the menu and the calibration result; plain paper where the eyes must not
-    /// wander (calibration, check) or where the screen draws its own garden (rhythm, and the meteors, whose SpriteKit
-    /// scene bakes it in: one renderer for the screen).
+    private var screenTransition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(insertion: .offset(x: 90).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
+                           removal: .opacity)
+    }
+
+    /// The sunlit sky with the living garden behind the menu, the clinic and the calibration result; a plain cream
+    /// page where the eyes must not wander (calibration, check) or where the screen draws its own world (rhythm,
+    /// warm-up, and the meteors, whose SpriteKit scene bakes it in: one renderer for the screen). The probe keeps its
+    /// own frozen paper.
     @ViewBuilder private var background: some View {
         switch app.route {
         case .winkTest:
             Palette.space.ignoresSafeArea()
-        case .calibration, .check, .rhythm, .pursuit, .game, .probe:
+        case .probe:
+            ProbeLook.paper.ignoresSafeArea()
+        case .calibration, .check, .rhythm, .pursuit, .game:
             Atlas.paper.ignoresSafeArea()
         case .menu, .result, .clinic:
             ZStack {
-                Atlas.paper
+                SunlitBackdrop()
                 LivingBackground(growFrom: app.launchTime)
             }
             .ignoresSafeArea()
