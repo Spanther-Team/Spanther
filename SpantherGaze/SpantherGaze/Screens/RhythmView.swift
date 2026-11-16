@@ -277,6 +277,8 @@ private struct RhythmPlayView: View {
                         app.rhythmTouch(at: Vec2(v.location.x, v.location.y))
                     }
                     .onEnded { _ in touching = false })
+                // The combo counter where the count used to be, under the start of the progress line.
+                CelebrationLayer(fx: session.fx, comboTop: 34, comboLeading: 64, calloutTop: 64)
                 if session.phase == .ready { readyText }
                 Button { app.leaveRhythmPlay() } label: {
                     Image(systemName: "xmark")
@@ -520,12 +522,6 @@ private struct RhythmPlayView: View {
         done.move(to: CGPoint(x: x0, y: y)); done.addLine(to: CGPoint(x: x0 + (x1 - x0) * k, y: y))
         g.stroke(all, with: .color(Atlas.ink.opacity(0.12)), lineWidth: 2)
         g.stroke(done, with: .color(Atlas.ink.opacity(0.6)), lineWidth: 2)
-        if s.judge.combo >= 2 {
-            g.draw(Text("\(s.judge.combo)").font(Atlas.display(28)).foregroundColor(Atlas.ink),
-                   at: CGPoint(x: x0, y: 46), anchor: .leading)
-            g.draw(Text("подряд").font(Atlas.caption).foregroundColor(Atlas.inkSoft),
-                   at: CGPoint(x: x0, y: 70), anchor: .leading)
-        }
         g.draw(Text("\(s.judge.score)").font(Atlas.title.monospacedDigit()).foregroundColor(Atlas.ink),
                at: CGPoint(x: x1, y: 46), anchor: .trailing)
     }

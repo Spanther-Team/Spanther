@@ -107,6 +107,30 @@ final class Haptics {
         try? thud?.start(atTime: engine.currentTime + squash)
     }
 
+    /// A streak milestone: taps rising in strength, one more for each tier (2 to 5), 85 ms apart like the chime's
+    /// notes, then a short soft swell. Built when it is needed: milestones are a few in a play.
+    func milestone(tier: Int) {
+        prepare()
+        guard let engine else { return }
+        let taps = 2 + min(3, max(0, tier))
+        var events: [CHHapticEvent] = []
+        for i in 0..<taps {
+            let k = Float(i + 1) / Float(taps)
+            events.append(CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.45 + 0.55 * k),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.55),
+            ], relativeTime: 0.085 * Double(i)))
+        }
+        events.append(CHHapticEvent(eventType: .hapticContinuous, parameters: [
+            CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.5),
+            CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.2),
+        ], relativeTime: 0.085 * Double(taps), duration: 0.12))
+        guard let pattern = try? CHHapticPattern(events: events, parameters: []),
+              let player = try? engine.makePlayer(with: pattern) else { return }
+        try? engine.start()
+        try? player.start(atTime: CHHapticTimeImmediate)
+    }
+
     private func setLevel(_ level: Double) {
         guard let charge, abs(level - sentLevel) > 0.04 else { return }
         sentLevel = level

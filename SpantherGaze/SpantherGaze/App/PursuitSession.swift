@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// One 60-second warm-up: a target glides across the screen (GazeCore's `PursuitPlan`) and every frame the distance
@@ -27,6 +28,10 @@ final class PursuitSession: ObservableObject {
     private(set) var tally: PursuitTally
     /// The camera has not seen the face for a while: the target waits, and the screen says what to do.
     @Published private(set) var waitingForFace = false
+    /// Following the dot as a streak: two seconds on it is a lock, more than 0.4 s off it ends the run. Small
+    /// fireworks: the eyes should stay with the dot.
+    let fx = StreakFX(burstScale: 0.6)
+    private var follow = FollowStreak()
     private var faceLostSince: Double?
     /// Frames the aim learned from the target while the eyes followed it (`AppModel.handle`).
     var taught = 0
@@ -96,7 +101,13 @@ final class PursuitSession: ObservableObject {
         let t = time(host: host)
         guard phase != .done, !clock.isHeld, plan.scored(at: t) else { return nil }
         let target = plan.position(at: t, in: screen)
-        tally.add(part: plan.part(at: t), distance: gaze.map { $0.distance(to: target) })
+        let distance = gaze.map { $0.distance(to: target) }
+        tally.add(part: plan.part(at: t), distance: distance)
+        switch follow.update(time: t, on: distance.map { $0 <= radiusPt } ?? false) {
+        case .lock: fx.lock(at: CGPoint(x: target.x, y: target.y))
+        case .broke: fx.breakStreak()
+        case .none: break
+        }
         return target
     }
 }

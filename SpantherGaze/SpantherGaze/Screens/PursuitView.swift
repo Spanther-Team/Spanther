@@ -45,6 +45,7 @@ private struct PursuitPlayView: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { v in app.pursuitTouch = Vec2(v.location.x, v.location.y) }
                 .onEnded { _ in app.pursuitTouch = nil })
+            CelebrationLayer(fx: session.fx, comboTop: 34, comboLeading: 64, calloutTop: 64)
             if session.phase == .countdown { intro }
             if session.waitingForFace { faceHint }
             Button { app.route = .menu } label: {

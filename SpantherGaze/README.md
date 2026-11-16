@@ -111,6 +111,10 @@ Menu, the «Ритм» plate. An original rhythm game drawn as a star atlas on w
 
 The probe's 90 seconds keep their frozen look v1 (`ProbeLook`: the old paper, ink, amber and serif type) and no screen transition runs into the probe, so session 1 and session 30 show the same stimulus; only its end screen has the new look.
 
+### Streaks and celebrations
+
+Every game keeps a streak (GazeCore `Streak`, tested in `StreakTests`): meteors count stones burnt in a row and break on a stone that reaches Earth or a look at a red sign; rhythm follows the judge's combo (a miss breaks it); the warm-up counts two seconds on the dot as one lock and breaks after 0.4 s off it (`FollowStreak`). `Screens/Celebration.swift` shows it: an angled ink counter «×7 подряд» that kicks on each lock, and at 5, 10, 15, 20 and every 5 after, a banner in Russian (×5 · ФОКУС!, ×10 · ВЗГЛЯД МАСТЕРА!, ×15 · ГЛАЗ БЕРКУТА!, ×20 · ВЗГЛЯД ПАНТЕРЫ!), cel fireworks from a pool of four at the lock's place (about 130 pt across, nothing flashes, off with Reduce Motion), an arpeggio up the pop's pentatonic scale (`Audio/StreakChimes.swift`) and rising haptic taps (`Haptics.milestone`). The rhythm game has no chime, so the beat stays clear. The probe keeps no streak: its end screen alone gets three fireworks, the chime and the haptics, after the 90 seconds.
+
 ## Living garden and distractions
 
 The rhythm mode's star atlas look (ink on paper, one vermilion, serif titles) was the look of every screen from 2026-11-09 to 2026-11-16. The menu shows the SPANTHER mark (its hold ring draws itself in at launch), the two games as plates with small animated vignettes, and the switches.

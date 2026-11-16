@@ -22,6 +22,8 @@ final class GameHUD: ObservableObject {
     /// Red signs that have left the play, and how many of them the player looked at. Shown on the pause plate.
     @Published var decoys = 0
     @Published var decoyErrors = 0
+    /// Stones burnt in a row, broken by a stone reaching Earth or a look at a red sign, and the celebration.
+    let fx = StreakFX()
 }
 
 /// Draws GameModel as sky-stones over the living garden, which the scene draws itself (GardenNode): the SKView is
@@ -341,6 +343,7 @@ final class GameScene: SKScene {
                 hud.decoys += 1
                 hud.decoyErrors += 1
                 notice(useTouch ? "Красный знак не трогаем" : "На красный знак не смотрим", seconds: 2.5)
+                hud.fx.breakStreak()
                 onDecoy?(rec, s.position)
             case .decoyPassed(let s, let rec):
                 signs.removeValue(forKey: s.id)?.leave(seconds: 0.4)
@@ -349,6 +352,7 @@ final class GameScene: SKScene {
             case .destroyed(let a, let rec):
                 if let stone = stones.removeValue(forKey: a.id) { pop(stone, a, m) }
                 hud.score = m.score
+                hud.fx.lock(at: CGPoint(x: a.position.x, y: a.position.y))
                 onRecord?(rec)
             case .energySpent(_, let left):
                 hud.energy = left
@@ -361,6 +365,7 @@ final class GameScene: SKScene {
                 if chargingID == a.id { endCharge() }
                 // A stone that got through breaks the run: the chime ladder starts from the bottom again.
                 sounds?.resetLadder()
+                hud.fx.breakStreak()
                 hud.shields = max(0, m.shields)
                 onRecord?(rec)
             case .shieldsDepleted(let lvl):
