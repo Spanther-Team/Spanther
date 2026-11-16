@@ -898,6 +898,7 @@ final class AppModel: ObservableObject {
         let p = PursuitSession(screen: screen, byEye: mode == .eyes, measuredErrorPt: report?.meanErrorPt,
                                targetScale: targetScale, now: now)
         pursuit = p
+        playFX = p.fx
         pursuitTouch = nil
         followGate.reset()
         logger.pursuitStart(time: p.startHost, radiusPt: p.radiusPt, durationSec: p.plan.durationSec)
@@ -1350,6 +1351,22 @@ final class AppModel: ObservableObject {
         #endif
     }
 
+    /// The streak of the play now or the last one (meteors, warm-up), for the victory screen's best run. The
+    /// rhythm game keeps its own (the judge's best combo).
+    var playFX: StreakFX?
+    /// Each play's victory by the play's id, so a victory screen shown twice adds its stars once.
+    private var awards: [String: VictoryAward] = [:]
+
+    /// The victory of a play: its rank, and the stars it adds to the child's observatory (saved at once).
+    func victory(for s: SessionSummary) -> VictoryAward {
+        if let a = awards[s.id] { return a }
+        let best = s.maxCombo ?? playFX?.best ?? 0
+        let a = VictoryAward(share: s.victoryShare, bestStreak: best, observatory: ObservatoryStore.load(child: s.childCode))
+        ObservatoryStore.save(a.after, child: s.childCode)
+        awards[s.id] = a
+        return a
+    }
+
     /// Adds a play to the history, or replaces the one with its id, and writes the history to the phone.
     private func keep(_ s: SessionSummary) {
         if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
@@ -1361,6 +1378,7 @@ final class AppModel: ObservableObject {
         let c = code.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions.removeAll { c.isEmpty || $0.childCode == c }
         SessionStore.save(sessions)
+        ObservatoryStore.reset(child: c)
     }
 
     /// Debug builds only: launch argument `-SpantherDemoReport summary|history` fills the history with made-up plays
