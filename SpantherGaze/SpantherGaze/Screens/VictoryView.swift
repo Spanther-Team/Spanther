@@ -247,7 +247,8 @@ private struct LandmarkRow: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(Landmark.all.indices, id: \.self) { i in
-                let isOpen = i < open, isNew = new.contains(i)
+                let isOpen = i < open
+                let isNew = new.contains(i)
                 Image(systemName: isOpen ? Landmark.all[i].symbol : "lock.fill")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(isOpen ? Atlas.ink : Atlas.inkSoft.opacity(0.45))
