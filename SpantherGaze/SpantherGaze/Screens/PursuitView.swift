@@ -65,7 +65,7 @@ private struct PursuitPlayView: View {
                     .foregroundStyle(Atlas.inkSoft)
                     .frame(width: Self.closeSize, height: Self.closeSize)
             }
-            .accessibilityLabel("Закончить")
+            .accessibilityLabel(L("Закончить"))
             .background(GeometryReader { b in
                 Color.clear
                     .onAppear { closeFrame = b.frame(in: .global) }
@@ -79,16 +79,16 @@ private struct PursuitPlayView: View {
     private var intro: some View {
         let noFace = session.byEye && !status.faceFound
         return VStack(spacing: 8) {
-            Text("Разминка · 1 минута")
+            Text(L("Разминка · 1 минута"))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.inkSoft)
-            Text(session.byEye ? "Следи за точкой одними глазами" : "Веди палец за точкой")
+            Text(session.byEye ? L("Следи за точкой одними глазами") : L("Веди палец за точкой"))
                 .font(Atlas.title)
                 .foregroundStyle(Atlas.ink)
             Spacer()
             Text(noFace
-                 ? "Камера не видит лицо. Держи телефон напротив глаз."
-                 : "Точка поплывёт влево и вправо, потом вверх и вниз, потом по восьмёрке.")
+                 ? L("Камера не видит лицо. Держи телефон напротив глаз.")
+                 : L("Точка поплывёт влево и вправо, потом вверх и вниз, потом по восьмёрке."))
                 .font(Atlas.caption)
                 .foregroundStyle(noFace ? Atlas.vermilion : Atlas.inkSoft)
                 .multilineTextAlignment(.center)
@@ -104,10 +104,10 @@ private struct PursuitPlayView: View {
     private var faceHint: some View {
         VStack(spacing: 6) {
             Spacer()
-            Text("Камера не видит лицо")
+            Text(L("Камера не видит лицо"))
                 .font(Atlas.title)
                 .foregroundStyle(Atlas.vermilion)
-            Text("Держи телефон примерно в 30 см от лица и не закрывай камеру пальцем. Точка подождёт.")
+            Text(L("Держи телефон примерно в 30 см от лица и не закрывай камеру пальцем. Точка подождёт."))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.inkSoft)
                 .multilineTextAlignment(.center)

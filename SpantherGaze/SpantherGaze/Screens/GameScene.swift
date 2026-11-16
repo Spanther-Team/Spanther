@@ -366,13 +366,13 @@ final class GameScene: SKScene {
                 signs[s.id] = n
                 world.addChild(n)
                 signsSeen += 1
-                if signsSeen == 1 { notice(useTouch ? "Красный знак не трогаем" : "На красный знак не смотрим", seconds: 4) }
+                if signsSeen == 1 { notice(useTouch ? L("Красный знак не трогаем") : L("На красный знак не смотрим"), seconds: 4) }
             case .decoyLooked(let s, let rec):
                 // An error, said quietly: the sign fades and a line reminds the rule. No flash, no shake, no buzz.
                 signs.removeValue(forKey: s.id)?.leave(seconds: 0.7)
                 hud.decoys += 1
                 hud.decoyErrors += 1
-                notice(useTouch ? "Красный знак не трогаем" : "На красный знак не смотрим", seconds: 2.5)
+                notice(useTouch ? L("Красный знак не трогаем") : L("На красный знак не смотрим"), seconds: 2.5)
                 hud.fx.breakStreak()
                 onDecoy?(rec, s.position)
             case .decoyPassed(let s, let rec):
@@ -405,12 +405,12 @@ final class GameScene: SKScene {
                 hud.shields = m.shields
                 hud.energy = m.energy
                 onGameEvent?("restart", m.energy, lvl)
-                flash("Щиты кончились. Уровень \(lvl) ещё раз")
+                flash(L("Щиты кончились. Уровень {0} ещё раз", lvl))
             case .levelEnded(_, let ratio, let next):
                 hud.level = next
                 hud.energy = m.energy
                 onGameEvent?("level", m.energy, next)
-                flash(String(format: "Сбито %.0f%% · Уровень %d", ratio * 100, next))
+                flash(String(format: L("Сбито %.0f%% · Уровень %d"), ratio * 100, next))
             case .pausedForFace(let on):
                 hud.lookBack = on
             }

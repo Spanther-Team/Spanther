@@ -102,25 +102,25 @@ struct MetricChart: View {
                 .foregroundStyle(Atlas.ink)
             Chart {
                 if let band {
-                    RectangleMark(xStart: .value("Занятие", 0.5), xEnd: .value("Занятие", Double(data.lastNumber) + 0.5),
+                    RectangleMark(xStart: .value(L("Занятие"), 0.5), xEnd: .value(L("Занятие"), Double(data.lastNumber) + 0.5),
                                   yStart: .value(label, band.lowerBound), yEnd: .value(label, band.upperBound))
                         .foregroundStyle(Atlas.moss.opacity(0.13))
                 }
                 if let trend, let first = xs.first, let last = xs.last, last > first {
                     ForEach(Self.steps(first, last), id: \.self) { x in
                         if let b = trend.band(at: x) {
-                            AreaMark(x: .value("Занятие", x), yStart: .value(label, b.lowerBound), yEnd: .value(label, b.upperBound))
+                            AreaMark(x: .value(L("Занятие"), x), yStart: .value(label, b.lowerBound), yEnd: .value(label, b.upperBound))
                                 .foregroundStyle(Atlas.ink.opacity(0.07))
                         }
                     }
                     ForEach([first, last], id: \.self) { x in
-                        LineMark(x: .value("Занятие", x), y: .value(label, trend.value(at: x)), series: .value("Ряд", "trend"))
+                        LineMark(x: .value(L("Занятие"), x), y: .value(label, trend.value(at: x)), series: .value(L("Ряд"), "trend"))
                             .foregroundStyle(Atlas.ink.opacity(0.55))
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                     }
                 }
                 ForEach(data.marks) { mark in
-                    RuleMark(x: .value("Занятие", mark.x))
+                    RuleMark(x: .value(L("Занятие"), mark.x))
                         .foregroundStyle(Atlas.amber.opacity(0.7))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 2]))
                         .annotation(position: .top, alignment: .center) {
@@ -128,7 +128,7 @@ struct MetricChart: View {
                         }
                 }
                 ForEach(points) { p in
-                    PointMark(x: .value("Занятие", Double(p.number)), y: .value(label, p.value))
+                    PointMark(x: .value(L("Занятие"), Double(p.number)), y: .value(label, p.value))
                         .symbol {
                             if p.onChart {
                                 Circle().fill(Atlas.ink).frame(width: 7, height: 7)
@@ -172,7 +172,7 @@ struct CourseCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Последние 3 занятия против первых 3").font(.system(size: 14, weight: .semibold)).foregroundStyle(Atlas.ink)
+            Text(L("Последние 3 занятия против первых 3")).font(.system(size: 14, weight: .semibold)).foregroundStyle(Atlas.ink)
             ForEach(ProbeMetric.charted, id: \.self) { m in
                 HStack(alignment: .firstTextBaseline) {
                     Text(ClinicText.name(m)).foregroundStyle(Atlas.inkSoft)
@@ -181,7 +181,7 @@ struct CourseCard: View {
                 }
                 .font(.system(size: 13))
             }
-            Text("Погрешность оценена по стартовым занятиям детей этого центра; это предварительная оценка до повторного исследования.")
+            Text(L("Погрешность оценена по стартовым занятиям детей этого центра; это предварительная оценка до повторного исследования."))
                 .font(.system(size: 11))
                 .foregroundStyle(Atlas.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -189,7 +189,7 @@ struct CourseCard: View {
     }
 
     private func line(_ m: ProbeMetric) -> String {
-        guard let c = data.change(m, sem: sems[m]) else { return "нужно больше занятий" }
+        guard let c = data.change(m, sem: sems[m]) else { return L("нужно больше занятий") }
         let d = ClinicText.digits(m)
         var s = "\(ClinicText.number(c.baseline, digits: d)) → \(ClinicText.number(c.recent, digits: d))"
         let sign = c.delta > 0 ? "+" : ""
@@ -206,20 +206,20 @@ struct ParentSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("\(data.course.title): занятий \(data.sessions.count) из \(data.course.plannedSessions)")
+            Text(L("{0}: занятий {1} из {2}", data.course.title, data.sessions.count, data.course.plannedSessions))
                 .font(Atlas.title)
                 .foregroundStyle(Atlas.ink)
             ForEach(ClinicText.parentMetrics, id: \.0) { metric, words in
                 let values = data.sessions.filter(\.onChart).compactMap { $0.probe?.metrics[metric.rawValue] }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(words).font(Atlas.body).foregroundStyle(Atlas.ink)
-                    Text("в начале: \(ClinicText.parentValue(metric, CourseStats.mean(Array(values.prefix(3)))))"
-                         + " · сейчас: \(ClinicText.parentValue(metric, CourseStats.mean(Array(values.suffix(3)))))")
+                    Text(L("в начале: {0}", ClinicText.parentValue(metric, CourseStats.mean(Array(values.prefix(3)))))
+                         + L(" · сейчас: {0}", ClinicText.parentValue(metric, CourseStats.mean(Array(values.suffix(3))))))
                         .font(Atlas.metric(13, weight: .regular))
                         .foregroundStyle(Atlas.inkSoft)
                 }
             }
-            Text("Это результаты игры, а не диагноз. Подробнее расскажет специалист.")
+            Text(L("Это результаты игры, а не диагноз. Подробнее расскажет специалист."))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.inkSoft)
         }

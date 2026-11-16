@@ -58,7 +58,7 @@ final class ClinicModel: ObservableObject {
             done(true)
             return
         }
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Открыть профили, графики и выгрузку") { [weak self] ok, _ in
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L("Открыть профили, графики и выгрузку")) { [weak self] ok, _ in
             DispatchQueue.main.async {
                 if ok {
                     self?.unguarded = false
@@ -105,11 +105,11 @@ final class ClinicModel: ObservableObject {
             problem = nil
             return r
         } catch ClinicStore.StoreError.emptyCode {
-            problem = "Нужен код ребёнка"
+            problem = L("Нужен код ребёнка")
         } catch ClinicStore.StoreError.duplicateCode(let c) {
-            problem = "Код \(c) уже есть"
+            problem = L("Код {0} уже есть", c)
         } catch {
-            problem = "Не получилось сохранить"
+            problem = L("Не получилось сохранить")
         }
         return nil
     }
@@ -156,7 +156,7 @@ final class ClinicModel: ObservableObject {
             try store.append(.sessionRecorded(session: s), child: id, by: by)
             reload()
         } catch {
-            problem = "Занятие не сохранилось"
+            problem = L("Занятие не сохранилось")
         }
     }
 
@@ -167,9 +167,9 @@ final class ClinicModel: ObservableObject {
             reload()
             problem = nil
         } catch ClinicStore.StoreError.duplicateCode(let c) {
-            problem = "Код \(c) уже есть"
+            problem = L("Код {0} уже есть", c)
         } catch {
-            problem = "Не получилось сохранить"
+            problem = L("Не получилось сохранить")
         }
     }
 

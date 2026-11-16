@@ -1,0 +1,3 @@
+/* The system's camera and Face ID questions, in the iPhone's language. The app's own texts: Resources/strings.json. */
+"NSCameraUsageDescription" = "Камера нужна, чтобы игра видела, куда ты смотришь. Изображение не покидает телефон.";
+"NSFaceIDUsageDescription" = "Face ID открывает специалисту профили детей, графики и выгрузку.";

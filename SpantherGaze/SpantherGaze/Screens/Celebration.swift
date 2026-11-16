@@ -138,10 +138,10 @@ final class StreakFX: ObservableObject {
     /// The banner's words for a milestone.
     static func calloutText(_ milestone: Int) -> String {
         switch milestone {
-        case 5: return "×5 · ФОКУС!"
-        case 10: return "×10 · ВЗГЛЯД МАСТЕРА!"
-        case 15: return "×15 · ГЛАЗ БЕРКУТА!"
-        default: return "×\(milestone) · ВЗГЛЯД ПАНТЕРЫ!"
+        case 5: return L("×5 · ФОКУС!")
+        case 10: return L("×10 · ВЗГЛЯД МАСТЕРА!")
+        case 15: return L("×15 · ГЛАЗ БЕРКУТА!")
+        default: return L("×{0} · ВЗГЛЯД ПАНТЕРЫ!", milestone)
         }
     }
 
@@ -209,7 +209,7 @@ private struct ComboBadge: View {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text("×").font(Atlas.display(18))
                     Text("\(count)").font(Atlas.display(32).monospacedDigit())
-                    Text("подряд")
+                    Text(L("подряд"))
                         .font(.system(size: 13, weight: .heavy, design: .rounded))
                         .padding(.leading, 3)
                 }
@@ -235,7 +235,7 @@ private struct ComboBadge: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(count >= 2 ? "\(count) подряд" : "")
+        .accessibilityLabel(count >= 2 ? L("{0} подряд", count) : "")
         .accessibilityHidden(count < 2)
     }
 }

@@ -6,6 +6,7 @@ import SwiftUI
 /// gear, so the games keep the whole screen.
 struct MenuView: View {
     @EnvironmentObject var app: AppModel
+    @EnvironmentObject var startGate: StartGate
     /// The report sheet: the summary of the play that just ended, or the child's history.
     @State private var report: ReportPage?
     /// The victory screen of the play that just ended, and the report that follows it.
@@ -95,7 +96,7 @@ struct MenuView: View {
                     .tracking(6)
                     .foregroundStyle(Atlas.ink)
                 // The tagline on an ink banner thrown on the slant.
-                Text("Игры, в которые играют взглядом")
+                Text(L("Игры, в которые играют взглядом"))
                     .font(Atlas.caption.weight(.bold))
                     .foregroundStyle(Atlas.cream)
                     .padding(.horizontal, 10)
@@ -129,7 +130,8 @@ struct MenuView: View {
                     .frame(width: 44, height: 44)
                     .atlasChip()
             }
-            .accessibilityLabel("Кто играет")
+            .accessibilityLabel(L("Кто играет"))
+            languageChip
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .semibold))
@@ -137,8 +139,32 @@ struct MenuView: View {
                     .frame(width: 44, height: 44)
                     .atlasChip()
             }
-            .accessibilityLabel("Настройки")
+            .accessibilityLabel(L("Настройки"))
         }
+    }
+
+    /// The app's language: the short name of the one in use on the chip, the three in their own words behind it.
+    /// A new one builds every screen again (`RootView`).
+    private var languageChip: some View {
+        Menu {
+            ForEach(GateLanguage.allCases) { l in
+                Button { startGate.language = l } label: {
+                    if l == startGate.language {
+                        Label(l.name, systemImage: "checkmark")
+                    } else {
+                        Text(l.name)
+                    }
+                }
+            }
+        } label: {
+            Text(startGate.language.short)
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundStyle(Atlas.ink)
+                .frame(width: 44, height: 44)
+                .atlasChip()
+        }
+        .accessibilityLabel(L("Язык"))
+        .accessibilityValue(startGate.language.name)
     }
 
     /// A new calibration for the session, when the player sits or holds the phone differently. Every mode plays on
@@ -150,7 +176,7 @@ struct MenuView: View {
             Button { app.beginCalibration(then: .menu) } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "scope")
-                    if withTitle { Text(has ? "Перекалибровать" : "Откалибровать").lineLimit(1) }
+                    if withTitle { Text(has ? L("Перекалибровать") : L("Откалибровать")).lineLimit(1) }
                 }
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(has ? Atlas.ink : Atlas.vermilion)
@@ -159,7 +185,7 @@ struct MenuView: View {
                 .atlasChip(border: has ? Atlas.ink : Atlas.vermilion)
                 .fixedSize()
             }
-            .accessibilityLabel(has ? "Перекалибровать" : "Откалибровать")
+            .accessibilityLabel(has ? L("Перекалибровать") : L("Откалибровать"))
         }
     }
 
@@ -168,7 +194,7 @@ struct MenuView: View {
         return Button { report = .history } label: {
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
-                if withTitle { Text(code.isEmpty ? "Занятия" : "Занятия · \(code)").lineLimit(1) }
+                if withTitle { Text(code.isEmpty ? L("Занятия") : L("Занятия · {0}", code)).lineLimit(1) }
             }
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(Atlas.ink)
@@ -177,7 +203,7 @@ struct MenuView: View {
             .atlasChip()
             .fixedSize()
         }
-        .accessibilityLabel(code.isEmpty ? "Занятия" : "Занятия ребёнка \(code)")
+        .accessibilityLabel(code.isEmpty ? L("Занятия") : L("Занятия ребёнка {0}", code))
     }
 
     /// One game: its small moving picture and name, what to do in a sentence or two, and its buttons at the bottom.
@@ -219,17 +245,17 @@ struct MenuView: View {
     }
 
     private var meteorPlate: some View {
-        plate("Метеориты",
+        plate(L("Метеориты"),
               app.decoysOn
-              ? "Держи взгляд на метеорите, пока он не сгорит. Красные знаки пропускай. Кончилась энергия? Моргни 3\u{00A0}раза."
-              : "Держи взгляд на метеорите, пока он не сгорит. Кончилась энергия? Моргни 3\u{00A0}раза.",
+              ? L("Держи взгляд на метеорите, пока он не сгорит. Красные знаки пропускай. Кончилась энергия? Моргни 3\u{00A0}раза.")
+              : L("Держи взгляд на метеорите, пока он не сгорит. Кончилась энергия? Моргни 3\u{00A0}раза."),
               accent: Atlas.gold, order: 1,
               art: { MeteorVignette() },
               actions: {
-                  Button { app.playMeteorsByEye() } label: { buttonText("Играть глазами") }
+                  Button { app.playMeteorsByEye() } label: { buttonText(L("Играть глазами")) }
                       .buttonStyle(AtlasPrimaryButton())
                       .disabled(!app.eyeTrackingSupported)
-                  fingerButton("Играть пальцем") {
+                  fingerButton(L("Играть пальцем")) {
                       app.mode = .touch
                       app.route = .game
                   }
@@ -237,32 +263,32 @@ struct MenuView: View {
     }
 
     private var rhythmPlate: some View {
-        plate("Ритм", "Смотри на звезду и подмигивай, когда стрелка дойдёт до метки.",
+        plate(L("Ритм"), L("Смотри на звезду и подмигивай, когда стрелка дойдёт до метки."),
               accent: Atlas.sky, order: 2,
               art: { NoteVignette() },
               actions: {
-                  Button { app.openRhythm() } label: { buttonText("Выбрать трек") }
+                  Button { app.openRhythm() } label: { buttonText(L("Выбрать трек")) }
                       .buttonStyle(AtlasPrimaryButton())
                       .disabled(app.rhythmTracks.isEmpty)
               })
     }
 
     private var pursuitPlate: some View {
-        plate("Разминка", "Минута для глаз: следи за точкой, пока она плывёт по экрану.",
+        plate(L("Разминка"), L("Минута для глаз: следи за точкой, пока она плывёт по экрану."),
               accent: Atlas.emerald, order: 3,
               art: { PursuitVignette() },
               actions: {
-                  Button { app.openPursuit(byEye: true) } label: { buttonText("Начать") }
+                  Button { app.openPursuit(byEye: true) } label: { buttonText(L("Начать")) }
                       .buttonStyle(AtlasPrimaryButton())
                       .disabled(!app.eyeTrackingSupported)
-                  fingerButton("Разминка пальцем") { app.openPursuit(byEye: false) }
+                  fingerButton(L("Разминка пальцем")) { app.openPursuit(byEye: false) }
               })
     }
 
     /// A refused camera never gets this far: the start screen keeps the menu locked until it is allowed.
     @ViewBuilder private var warnings: some View {
         if !app.eyeTrackingSupported {
-            Text("Этот iPhone не поддерживает отслеживание лица (нужен TrueDepth или чип A12 и новее). Доступна игра пальцем.")
+            Text(L("Этот iPhone не поддерживает отслеживание лица (нужен TrueDepth или чип A12 и новее). Доступна игра пальцем."))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.vermilion)
                 .fixedSize(horizontal: false, vertical: true)
@@ -274,14 +300,14 @@ struct MenuView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Text("Изображение с камеры остаётся на телефоне.")
+            Text(L("Изображение с камеры остаётся на телефоне."))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 8)
             // App Review 5.1.1: the privacy policy must be reachable inside the app, not only on the store page.
-            Link("Политика конфиденциальности", destination: Self.privacyPolicyURL)
+            Link(L("Политика конфиденциальности"), destination: Self.privacyPolicyURL)
                 .font(Atlas.caption.weight(.semibold))
                 .foregroundStyle(Atlas.ink)
                 .frame(minHeight: 44)
@@ -303,43 +329,43 @@ private struct SettingsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Text("Настройки").font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                Text(L("Настройки")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
                 Spacer()
-                Button { dismiss() } label: { Text("Готово") }
+                Button { dismiss() } label: { Text(L("Готово")) }
                     .buttonStyle(AtlasPrimaryButton())
                     .frame(width: 130)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 24) {
-                        column("Игры") {
-                            setting("Мелкие цели", smallTargetsHint, $app.smallTargets, divider: true)
-                            setting("Красные знаки", "В метеоритах летят знаки, на которые нельзя смотреть. Ошибки считаются.",
+                        column(L("Игры")) {
+                            setting(L("Мелкие цели"), smallTargetsHint, $app.smallTargets, divider: true)
+                            setting(L("Красные знаки"), L("В метеоритах летят знаки, на которые нельзя смотреть. Ошибки считаются."),
                                     $app.decoysOn, divider: true)
-                            setting("Музыка в метеоритах", "Тихий фон без ударных. Кнопка звука есть и в самой игре.",
+                            setting(L("Музыка в метеоритах"), L("Тихий фон без ударных. Кнопка звука есть и в самой игре."),
                                     $app.musicOn, divider: false)
                         }
-                        column("Камера и взгляд") {
-                            setting("Ночное зрение", "Для тёмной комнаты: экран подсвечивает лицо на полной яркости.",
+                        column(L("Камера и взгляд")) {
+                            setting(L("Ночное зрение"), L("Для тёмной комнаты: экран подсвечивает лицо на полной яркости."),
                                     $app.nightVision, divider: true)
-                            setting("Зрачки через Vision", app.nightVision ? "Выключены ночным зрением." : "Точнее при хорошем свете.",
+                            setting(L("Зрачки через Vision"), app.nightVision ? L("Выключены ночным зрением.") : L("Точнее при хорошем свете."),
                                     $app.usePupils, divider: true)
                                 .disabled(app.nightVision)
-                            setting("Подстройка под наклон", "Прицел держится, если наклонить телефон.", $app.adaptAim, divider: true)
-                            setting("Отладка", "Цифры трекинга и точка взгляда.", $app.showDebug, divider: false)
+                            setting(L("Подстройка под наклон"), L("Прицел держится, если наклонить телефон."), $app.adaptAim, divider: true)
+                            setting(L("Отладка"), L("Цифры трекинга и точка взгляда."), $app.showDebug, divider: false)
                         }
                     }
                     HStack(spacing: 20) {
-                        Button(action: onWinkTest) { Label("Тест подмигиваний", systemImage: "eye.slash") }
+                        Button(action: onWinkTest) { Label(L("Тест подмигиваний"), systemImage: "eye.slash") }
                             .disabled(!app.eyeTrackingSupported)
-                        ShareLink(item: app.logURL) { Label("CSV последней сессии", systemImage: "square.and.arrow.up") }
-                            .accessibilityLabel("Экспорт CSV последней сессии")
+                        ShareLink(item: app.logURL) { Label(L("CSV последней сессии"), systemImage: "square.and.arrow.up") }
+                            .accessibilityLabel(L("Экспорт CSV последней сессии"))
                         Spacer(minLength: 0)
                     }
                     .font(Atlas.caption.weight(.semibold))
                     .foregroundStyle(Atlas.ink)
                     .frame(minHeight: 44)
-                    Text("Изображение с камеры остаётся на телефоне. Таблицы и CSV уходят с него только через кнопку «Поделиться».")
+                    Text(L("Изображение с камеры остаётся на телефоне. Таблицы и CSV уходят с него только через кнопку «Поделиться»."))
                         .font(Atlas.caption)
                         .foregroundStyle(Atlas.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -358,7 +384,7 @@ private struct SettingsSheet: View {
     private var smallTargetsHint: String {
         let percent = Int(((1 - app.balance.smallTargetScale) * 100).rounded())
         let floor = SessionHistory.number(app.balance.zoneFloorFactor, 2)
-        return "Метеориты, звёзды и зоны попадания на \(percent)% меньше. Зона не меньше \(floor) промаха калибровки."
+        return L("Метеориты, звёзды и зоны попадания на {0}% меньше. Зона не меньше {1} промаха калибровки.", percent, floor)
     }
 
     private func column<Rows: View>(_ title: String, @ViewBuilder rows: () -> Rows) -> some View {

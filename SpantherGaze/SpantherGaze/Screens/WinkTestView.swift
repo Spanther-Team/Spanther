@@ -45,18 +45,18 @@ struct WinkTestView: View {
     private var intro: some View {
         HStack(spacing: 32) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Тест подмигиваний").font(.title2.bold())
-                Text("Каждую секунду щёлкает метроном. На каждый щелчок подмигни глазом, который горит на экране: сначала 20 раз левым, потом 20 раз правым, потом по очереди. Это чуть больше минуты.")
+                Text(L("Тест подмигиваний")).font(.title2.bold())
+                Text(L("Каждую секунду щёлкает метроном. На каждый щелчок подмигни глазом, который горит на экране: сначала 20 раз левым, потом 20 раз правым, потом по очереди. Это чуть больше минуты."))
                     .foregroundStyle(Palette.dim)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Держи телефон как в игре. Сначала попробуй: когда подмигиваешь, полоска этого глаза доходит до черты, а вторая остаётся ниже.")
+                Text(L("Держи телефон как в игре. Сначала попробуй: когда подмигиваешь, полоска этого глаза доходит до черты, а вторая остаётся ниже."))
                     .font(.footnote)
                     .foregroundStyle(Palette.dim)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
-                    Button { app.route = .menu } label: { Text("Назад").frame(maxWidth: .infinity) }
+                    Button { app.route = .menu } label: { Text(L("Назад")).frame(maxWidth: .infinity) }
                         .buttonStyle(SecondaryButton())
-                    Button { begin() } label: { Text("Начать").frame(maxWidth: .infinity) }
+                    Button { begin() } label: { Text(L("Начать")).frame(maxWidth: .infinity) }
                         .buttonStyle(PrimaryButton())
                         .disabled(!status.faceFound)
                 }
@@ -64,10 +64,10 @@ struct WinkTestView: View {
             .frame(maxWidth: 420)
             VStack(spacing: 16) {
                 HStack(spacing: 32) {
-                    lid("Левый", status.blink?.left ?? 0, close: status.winkCloseLevel.left)
-                    lid("Правый", status.blink?.right ?? 0, close: status.winkCloseLevel.right)
+                    lid(L("Левый"), status.blink?.left ?? 0, close: status.winkCloseLevel.left)
+                    lid(L("Правый"), status.blink?.right ?? 0, close: status.winkCloseLevel.right)
                 }
-                Text(status.faceFound ? lastWinkText : "Не видно лица")
+                Text(status.faceFound ? lastWinkText : L("Не видно лица"))
                     .font(.footnote)
                     .foregroundStyle(status.faceFound ? Palette.dim : Palette.hot)
             }
@@ -76,11 +76,11 @@ struct WinkTestView: View {
     }
 
     private var lastWinkText: String {
-        guard let w = status.lastWink else { return "Подмигни, чтобы проверить" }
+        guard let w = status.lastWink else { return L("Подмигни, чтобы проверить") }
         switch w.side {
-        case .left: return "Последнее: левый глаз"
-        case .right: return "Последнее: правый глаз"
-        case .both: return "Последнее: оба глаза"
+        case .left: return L("Последнее: левый глаз")
+        case .right: return L("Последнее: правый глаз")
+        case .both: return L("Последнее: оба глаза")
         }
     }
 
@@ -116,7 +116,7 @@ struct WinkTestView: View {
                     HStack {
                         Text(caption(next: next, now: now)).font(.headline.monospacedDigit())
                         Spacer()
-                        Button("Стоп") { stopRun() }.font(.headline)
+                        Button(L("Стоп")) { stopRun() }.font(.headline)
                     }
                     Spacer()
                 }
@@ -153,7 +153,7 @@ struct WinkTestView: View {
             VStack(spacing: 6) {
                 Image(systemName: active ? "eye.slash.fill" : "eye")
                     .font(.system(size: 30, weight: .semibold))
-                Text(side == .left ? "левый" : "правый").font(.footnote)
+                Text(side == .left ? L("левый") : L("правый")).font(.footnote)
                 // Inside the circle, where the closing ring of the next click never covers it.
                 timing(side, now: now)
             }
@@ -186,21 +186,21 @@ struct WinkTestView: View {
     /// How late the last wink on this side landed. Always takes its line, so the eye above it does not jump.
     private func timing(_ side: WinkSide, now: Double) -> some View {
         let w = recentWink(side, now: now)
-        return Text(w.map { String(format: "%+.0f мс", $0.offsetMs) } ?? "0 мс")
+        return Text(w.map { String(format: L("%+.0f мс"), $0.offsetMs) } ?? L("0 мс"))
             .font(.footnote.bold().monospacedDigit())
             .foregroundStyle(w?.color ?? .clear)
             .opacity(w.map { 1 - $0.age } ?? 0)
     }
 
     private func caption(next: WinkTestPlan.Cue?, now: Double) -> String {
-        guard let next, let first = plan.cues.first else { return "Готово" }
+        guard let next, let first = plan.cues.first else { return L("Готово") }
         if now < start + first.offset - 0.3 {
-            return "Приготовься: \(Int((start + first.offset - now).rounded(.up)))"
+            return L("Приготовься: {0}", Int((start + first.offset - now).rounded(.up)))
         }
         let block = plan.cues.filter { $0.block == next.block }
         let n = (block.firstIndex(of: next) ?? 0) + 1
-        let name = ["Левый глаз", "Правый глаз", "По очереди"][min(next.block, 2)]
-        return "\(name) · \(n) из \(block.count)"
+        let name = [L("Левый глаз"), L("Правый глаз"), L("По очереди")][min(next.block, 2)]
+        return L("{0} · {1} из {2}", name, n, block.count)
     }
 
     private func begin() {
@@ -250,24 +250,24 @@ struct WinkTestView: View {
     private var results: some View {
         let s = stats ?? WinkStats()
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Результат теста").font(.title2.bold())
+            Text(L("Результат теста")).font(.title2.bold())
             HStack(alignment: .top, spacing: 24) {
-                eye("Левый глаз", s.left)
-                eye("Правый глаз", s.right)
+                eye(L("Левый глаз"), s.left)
+                eye(L("Правый глаз"), s.right)
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Лишние подмигивания: \(s.strayOneEye)")
-                        Text("Лишние моргания: \(s.strayBoth)")
+                        Text(L("Лишние подмигивания: {0}", s.strayOneEye))
+                        Text(L("Лишние моргания: {0}", s.strayBoth))
                     }
                     .font(.footnote)
                     .foregroundStyle(Palette.dim)
                     ShareLink(item: app.logURL) {
-                        Label("Отправить CSV", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                        Label(L("Отправить CSV"), systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryButton())
-                    Button { begin() } label: { Text("Ещё раз").frame(maxWidth: .infinity) }
+                    Button { begin() } label: { Text(L("Ещё раз")).frame(maxWidth: .infinity) }
                         .buttonStyle(SecondaryButton())
-                    Button("В меню") { app.route = .menu }.font(.footnote)
+                    Button(L("В меню")) { app.route = .menu }.font(.footnote)
                 }
                 .frame(width: 200)
             }
@@ -279,13 +279,13 @@ struct WinkTestView: View {
     private func eye(_ title: String, _ e: WinkStats.Eye) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.headline)
-            row("Попал этим глазом", "\(e.hits) из \(e.cues)")
-            row("Другим глазом", "\(e.wrongEye)")
-            row("Обоими глазами", "\(e.bothEyes)")
-            row("Средний сдвиг", String(format: "%+.0f мс", e.meanOffsetMs))
-            row("Разброс", String(format: "±%.0f мс", e.sdOffsetMs))
-            row("В окне 100/180/250 мс", "\(e.within100)/\(e.within180)/\(e.within250)")
-            row("Прищур второго глаза", String(format: "%.2f", e.medianOtherPeak).replacingOccurrences(of: ".", with: ","))
+            row(L("Попал этим глазом"), L("{0} из {1}", e.hits, e.cues))
+            row(L("Другим глазом"), "\(e.wrongEye)")
+            row(L("Обоими глазами"), "\(e.bothEyes)")
+            row(L("Средний сдвиг"), String(format: L("%+.0f мс"), e.meanOffsetMs))
+            row(L("Разброс"), String(format: L("±%.0f мс"), e.sdOffsetMs))
+            row(L("В окне 100/180/250 мс"), "\(e.within100)/\(e.within180)/\(e.within250)")
+            row(L("Прищур второго глаза"), String(format: "%.2f", e.medianOtherPeak).replacingOccurrences(of: ".", with: ","))
         }
         .frame(width: 220, alignment: .leading)
     }

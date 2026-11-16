@@ -42,15 +42,15 @@ private struct RhythmPicker: View {
     var body: some View {
         HStack(alignment: .top, spacing: 32) {
             VStack(alignment: .leading, spacing: 16) {
-                Button { app.route = .menu } label: { Label("Меню", systemImage: "chevron.left") }
+                Button { app.route = .menu } label: { Label(L("Меню"), systemImage: "chevron.left") }
                     .font(Atlas.body)
                     .foregroundStyle(Atlas.inkSoft)
                     .frame(minHeight: 44)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Ритм").font(Atlas.display(34)).foregroundStyle(Atlas.ink)
+                    Text(L("Ритм")).font(Atlas.display(34)).foregroundStyle(Atlas.ink)
                     Text(app.rhythmByEye
-                         ? "Смотри на звезду. Когда стрелка дойдёт до красной метки, подмигни."
-                         : "Когда стрелка дойдёт до красной метки, коснись звезды.")
+                         ? L("Смотри на звезду. Когда стрелка дойдёт до красной метки, подмигни.")
+                         : L("Когда стрелка дойдёт до красной метки, коснись звезды."))
                         .font(Atlas.caption)
                         .foregroundStyle(Atlas.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -74,7 +74,7 @@ private struct RhythmPicker: View {
                 }
                 HStack(spacing: 8) {
                     Button { play(byEye: app.rhythmByEye) } label: {
-                        Text(needsCalibration ? "Калибровка и игра" : "Играть").frame(maxWidth: .infinity)
+                        Text(needsCalibration ? L("Калибровка и игра") : L("Играть")).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(AtlasPrimaryButton())
                     if app.rhythmByEye {
@@ -82,7 +82,7 @@ private struct RhythmPicker: View {
                         Button { play(byEye: false) } label: { Image(systemName: "hand.point.up.left") }
                             .buttonStyle(AtlasSecondaryButton())
                             .frame(width: 56)
-                            .accessibilityLabel("Играть пальцем")
+                            .accessibilityLabel(L("Играть пальцем"))
                     }
                 }
                 .disabled(track == nil)
@@ -105,10 +105,10 @@ private struct RhythmPicker: View {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     // A long name («Метеоритный дождь») shrinks a little instead of losing its end.
-                    Text(t.title).font(Atlas.title).foregroundStyle(selected ? Atlas.ink : Atlas.inkSoft)
+                    Text(L(t.title)).font(Atlas.title).foregroundStyle(selected ? Atlas.ink : Atlas.inkSoft)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text(String(format: "%.0f уд/мин · %ld:%02ld · %@", t.bpm, length / 60, length % 60, t.license))
+                    Text(String(format: L("%.0f уд/мин · %ld:%02ld · %@"), t.bpm, length / 60, length % 60, t.license))
                         .font(Atlas.caption)
                         .foregroundStyle(Atlas.inkSoft)
                         .monospacedDigit()
@@ -121,7 +121,7 @@ private struct RhythmPicker: View {
                             .foregroundStyle(i < stars ? Atlas.energy : Atlas.missGrey)
                     }
                 }
-                .accessibilityLabel("Лучший результат: звёзд \(stars) из 3")
+                .accessibilityLabel(L("Лучший результат: звёзд {0} из 3", stars))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -286,7 +286,7 @@ private struct RhythmPlayView: View {
                         .foregroundStyle(Atlas.inkSoft)
                         .frame(width: Self.closeSize, height: Self.closeSize)
                 }
-                .accessibilityLabel("Закончить")
+                .accessibilityLabel(L("Закончить"))
                 .background(GeometryReader { b in
                     Color.clear
                         .onAppear { closeFrame = b.frame(in: .global) }
@@ -299,17 +299,17 @@ private struct RhythmPlayView: View {
 
     private var readyText: some View {
         VStack(spacing: 8) {
-            Text("\(session.track.title) · \(Atlas.levelName(session.level))")
+            Text(L(session.track.title) + " · " + Atlas.levelName(session.level))
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.inkSoft)
-            Text(app.mode == .eyes ? "Посмотри на звезду и подмигни" : "Коснись звезды, чтобы начать")
+            Text(app.mode == .eyes ? L("Посмотри на звезду и подмигни") : L("Коснись звезды, чтобы начать"))
                 .font(Atlas.title)
                 .foregroundStyle(Atlas.ink)
             Spacer()
             if app.mode == .eyes {
                 Text(status.faceFound
-                     ? "Звезда засветится под взглядом. Подмигни, и игра подстроится под то, как ты держишь телефон."
-                     : "Камера не видит лицо. Держи телефон напротив глаз.")
+                     ? L("Звезда засветится под взглядом. Подмигни, и игра подстроится под то, как ты держишь телефон.")
+                     : L("Камера не видит лицо. Держи телефон напротив глаз."))
                     .font(Atlas.caption)
                     .foregroundStyle(status.faceFound ? Atlas.inkSoft : Atlas.vermilion)
                     .multilineTextAlignment(.center)
@@ -407,7 +407,7 @@ private struct RhythmPlayView: View {
         drawRejections(&g, s, t, dialR: dialR)
 
         if let first = s.notes.first, t < first.time - lead {
-            g.draw(Text("Слушай ритм").font(Atlas.title).foregroundColor(Atlas.inkSoft),
+            g.draw(Text(L("Слушай ритм")).font(Atlas.title).foregroundColor(Atlas.inkSoft),
                    at: CGPoint(x: size.width / 2, y: size.height / 2))
         }
         drawHUD(&g, s, t, size)
@@ -423,8 +423,8 @@ private struct RhythmPlayView: View {
             guard age >= 0, age < 0.9, r.index < s.points.count, r.reason == .wrongEye || r.onBeat else { continue }
             let text: String
             switch r.reason {
-            case .blink: text = "одним глазом"
-            case .wrongEye: text = s.notes[r.index].side == .left ? "левым глазом" : "правым глазом"
+            case .blink: text = L("одним глазом")
+            case .wrongEye: text = s.notes[r.index].side == .left ? L("левым глазом") : L("правым глазом")
             }
             var gg = g
             gg.opacity = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.3
@@ -561,7 +561,7 @@ private struct RhythmResults: View {
             VStack(alignment: .leading, spacing: 8) {
                 ConstellationPlate(session: session)
                     .aspectRatio(1.9, contentMode: .fit)
-                Text("Созвездие «\(session.track.title)», \(Atlas.levelName(session.level).lowercased()) уровень")
+                Text(L("Созвездие «{0}», {1} уровень", L(session.track.title), Atlas.levelName(session.level).lowercased()))
                     .font(Atlas.caption.italic())
                     .foregroundStyle(Atlas.inkSoft)
                 if let summary = app.rhythmSummary { numbers(summary) }
@@ -578,7 +578,7 @@ private struct RhythmResults: View {
                                 .foregroundStyle(i < j.stars ? Atlas.vermilion : Atlas.missGrey)
                         }
                     }
-                    .accessibilityLabel("Звёзд \(j.stars) из 3")
+                    .accessibilityLabel(L("Звёзд {0} из 3", j.stars))
                 }
                 HStack(spacing: 0) {
                     ForEach(Judgement.allCases, id: \.self) { k in
@@ -591,16 +591,16 @@ private struct RhythmResults: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Лучшая серия \(j.maxCombo) · очки \(j.score)\(session.isNewBest ? " · новый рекорд" : "")")
+                    Text(L("Лучшая серия {0} · очки {1}{2}", j.maxCombo, j.score, session.isNewBest ? L(" · новый рекорд") : ""))
                         .foregroundStyle(Atlas.ink)
                     ForEach(notes, id: \.self) { Text($0).foregroundStyle(Atlas.inkSoft) }
                 }
                 .font(Atlas.caption)
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Button("Треки") { app.leaveRhythmPlay() }
+                    Button(L("Треки")) { app.leaveRhythmPlay() }
                         .buttonStyle(AtlasSecondaryButton())
-                    Button("Ещё раз") {
+                    Button(L("Ещё раз")) {
                         app.prepareRhythm(track: session.track, level: session.level, screen: session.screen)
                     }
                     .buttonStyle(AtlasPrimaryButton())
@@ -608,7 +608,7 @@ private struct RhythmResults: View {
                         ShareLink(item: url) { Label("CSV", systemImage: "square.and.arrow.up") }
                             .buttonStyle(AtlasSecondaryButton())
                             .frame(width: 88)
-                            .accessibilityLabel("Поделиться таблицей CSV этой игры")
+                            .accessibilityLabel(L("Поделиться таблицей CSV этой игры"))
                     }
                 }
             }
@@ -646,7 +646,7 @@ private struct RhythmResults: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             }
-            Text("Это результаты игры, а не медицинские показатели.")
+            Text(L("Это результаты игры, а не медицинские показатели."))
                 .foregroundStyle(Atlas.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -657,14 +657,14 @@ private struct RhythmResults: View {
     /// What the numbers say, in a sentence each.
     private var notes: [String] {
         let j = session.judge
-        var out = [String(format: "Подмигивание отстаёт от бита на %.0f мс, игра это учитывает.", j.latencySec * 1000)]
+        var out = [String(format: L("Подмигивание отстаёт от бита на %.0f мс, игра это учитывает."), j.latencySec * 1000)]
         if j.offTarget > 0 {
             out.append(app.mode == .eyes && j.offTarget >= max(3, session.notes.count / 10)
-                       ? "Мимо из-за прицела: \(j.offTarget). Если так часто, откалибруй заново."
-                       : "Мимо из-за прицела: \(j.offTarget).")
+                       ? L("Мимо из-за прицела: {0}. Если так часто, откалибруй заново.", j.offTarget)
+                       : L("Мимо из-за прицела: {0}.", j.offTarget))
         }
-        if j.wrongEye > 0 { out.append("Не тем глазом: \(j.wrongEye).") }
-        if !app.currentChildCode.isEmpty { out.append("Игра сохранена в занятиях \(app.currentChildCode).") }
+        if j.wrongEye > 0 { out.append(L("Не тем глазом: {0}.", j.wrongEye)) }
+        if !app.currentChildCode.isEmpty { out.append(L("Игра сохранена в занятиях {0}.", app.currentChildCode)) }
         return out
     }
 }
@@ -708,6 +708,6 @@ private struct ConstellationPlate: View {
             g.stroke(marks, with: .color(Atlas.ink.opacity(0.4)), lineWidth: 1)
         }
         .background(InkSlab(shape: CutPlate(cut: 14), fill: Atlas.paperShade, depth: 4))
-        .accessibilityLabel("Созвездие этой игры")
+        .accessibilityLabel(L("Созвездие этой игры"))
     }
 }

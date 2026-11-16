@@ -15,7 +15,7 @@ struct ProbeView: View {
                     ProbeStage(session: session)
                     ProbeDone(session: session)
                 } else {
-                    Text(app.probePreparing ? "Готовим задание…" : " ")
+                    Text(app.probePreparing ? L("Готовим задание…") : " ")
                         .font(ProbeLook.display(22))
                         .foregroundStyle(ProbeLook.inkSoft)
                 }
@@ -28,7 +28,7 @@ struct ProbeView: View {
                                 .foregroundStyle(ProbeLook.ink.opacity(0.5))
                                 .frame(width: 44, height: 44)
                         }
-                        .accessibilityLabel("Остановить пробу")
+                        .accessibilityLabel(L("Остановить пробу"))
                     }
                     Spacer()
                 }
@@ -53,7 +53,7 @@ private struct ProbeStage: View {
             }
             .overlay(alignment: .center) {
                 if session.time(host: now) < session.plan.rules.quietStartSec, session.phase == .running {
-                    Text("Смотри на кружки")
+                    Text(L("Смотри на кружки"))
                         .font(ProbeLook.display(22))
                         .foregroundStyle(ProbeLook.inkSoft)
                         .offset(y: 70)
@@ -168,22 +168,22 @@ private struct ProbeDone: View {
                 // The panther cub cheers too, in the gifts the child's plays have brought it.
                 PantherCub(gifts: ObservatoryStore.load(child: app.currentChildCode).gifts, reduceMotion: reduceMotion)
                     .frame(width: 64, height: 64)
-                Text("Готово!").font(Atlas.display(30)).foregroundStyle(Atlas.ink)
+                Text(L("Готово!")).font(Atlas.display(30)).foregroundStyle(Atlas.ink)
             }
             if app.clinic.role == .clinician, let outcome = app.probeOutcome {
                 SessionCard(session: outcome.session, issues: outcome.issues)
             } else {
-                Text("Отличная работа! Теперь можно поиграть.")
+                Text(L("Отличная работа! Теперь можно поиграть."))
                     .font(Atlas.body)
                     .foregroundStyle(Atlas.inkSoft)
             }
             HStack(spacing: 12) {
-                Button { app.route = .clinic } label: { Text("К профилю") }
+                Button { app.route = .clinic } label: { Text(L("К профилю")) }
                     .buttonStyle(AtlasSecondaryButton())
                 Button {
                     app.mode = .eyes
                     app.route = .game
-                } label: { Text("Играть") }
+                } label: { Text(L("Играть")) }
                     .buttonStyle(AtlasPrimaryButton())
             }
         }
@@ -202,7 +202,7 @@ struct SessionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let n = session.number { Text("Занятие \(n)").font(Atlas.title).foregroundStyle(Atlas.ink) }
+            if let n = session.number { Text(L("Занятие {0}", n)).font(Atlas.title).foregroundStyle(Atlas.ink) }
             if let m = session.probe?.metrics {
                 ForEach(ClinicText.headline, id: \.self) { metric in
                     HStack {
@@ -216,11 +216,11 @@ struct SessionCard: View {
             if issues.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Atlas.emerald)
-                    Text("Контроль качества пройден").foregroundStyle(Atlas.ink)
+                    Text(L("Контроль качества пройден")).foregroundStyle(Atlas.ink)
                 }
                 .font(Atlas.caption.weight(.semibold))
             } else {
-                Text("Не на графике: " + issues.map(ClinicText.issue).joined(separator: ", "))
+                Text(L("Не на графике: ") + issues.map(ClinicText.issue).joined(separator: ", "))
                     .font(Atlas.caption)
                     .foregroundStyle(Atlas.vermilion)
                     .fixedSize(horizontal: false, vertical: true)

@@ -69,26 +69,26 @@ enum Atlas {
 
     static func levelName(_ l: RhythmLevel) -> String {
         switch l {
-        case .easy: return "Лёгкий"
-        case .normal: return "Средний"
-        case .hard: return "Сложный"
+        case .easy: return L("Лёгкий")
+        case .normal: return L("Средний")
+        case .hard: return L("Сложный")
         }
     }
 
     static func levelHint(_ l: RhythmLevel) -> String {
         switch l {
-        case .easy: return "Сильные доли. Можно моргать."
-        case .normal: return "Больше нот, любой глаз, но одним."
-        case .hard: return "Слева левый глаз, справа правый."
+        case .easy: return L("Сильные доли. Можно моргать.")
+        case .normal: return L("Больше нот, любой глаз, но одним.")
+        case .hard: return L("Слева левый глаз, справа правый.")
         }
     }
 
     static func word(_ j: Judgement) -> String {
         switch j {
-        case .perfect: return "Точно"
-        case .good: return "Хорошо"
-        case .ok: return "Есть"
-        case .miss: return "Мимо"
+        case .perfect: return L("Точно")
+        case .good: return L("Хорошо")
+        case .ok: return L("Есть")
+        case .miss: return L("Мимо")
         }
     }
 

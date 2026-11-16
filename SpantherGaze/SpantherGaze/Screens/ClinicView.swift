@@ -29,7 +29,7 @@ private struct ClinicContent: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             if clinic.unguarded {
-                Text("На телефоне нет код-пароля: профили и графики открыты всем. Задайте код в настройках iPhone.")
+                Text(L("На телефоне нет код-пароля: профили и графики открыты всем. Задайте код в настройках iPhone."))
                     .font(Atlas.caption)
                     .foregroundStyle(Atlas.vermilion)
             }
@@ -55,19 +55,19 @@ private struct ClinicContent: View {
                     .frame(width: 44, height: 44)
             }
             .foregroundStyle(Atlas.ink)
-            .accessibilityLabel("В меню")
-            Text("Кто играет?").font(Atlas.display(26)).foregroundStyle(Atlas.ink)
+            .accessibilityLabel(L("В меню"))
+            Text(L("Кто играет?")).font(Atlas.display(26)).foregroundStyle(Atlas.ink)
             Spacer()
             switch clinic.role {
             case .clinician?:
-                roleLabel("Специалист")
+                roleLabel(L("Специалист"))
             case .parent?:
-                roleLabel("Родитель")
+                roleLabel(L("Родитель"))
             case nil:
-                Button { clinic.unlockClinician() } label: { Label("Специалист", systemImage: "faceid") }
+                Button { clinic.unlockClinician() } label: { Label(L("Специалист"), systemImage: "faceid") }
                     .buttonStyle(AtlasSecondaryButton())
                 if clinic.hasParentPin {
-                    Button { askPin = true } label: { Label("Родитель", systemImage: "lock") }
+                    Button { askPin = true } label: { Label(L("Родитель"), systemImage: "lock") }
                         .buttonStyle(AtlasSecondaryButton())
                 }
             }
@@ -77,7 +77,7 @@ private struct ClinicContent: View {
     private func roleLabel(_ title: String) -> some View {
         HStack(spacing: 8) {
             Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Atlas.ink)
-            Button { clinic.lock() } label: { Label("Закрыть", systemImage: "lock.open") }
+            Button { clinic.lock() } label: { Label(L("Закрыть"), systemImage: "lock.open") }
                 .buttonStyle(AtlasSecondaryButton())
         }
     }
@@ -90,13 +90,13 @@ private struct ClinicContent: View {
                         .buttonStyle(.plain)
                         .selectedPop(r.id == clinic.playingID)
                         .kineticEntrance(order: k)
-                        .accessibilityLabel("Играет \(r.child.tileName)")
+                        .accessibilityLabel(L("Играет {0}", r.child.tileName))
                 }
                 if clinic.role == .clinician {
                     Button { adding = true } label: {
                         VStack(spacing: 8) {
                             Image(systemName: "plus").font(.system(size: 30, weight: .semibold))
-                            Text("Ребёнок").font(Atlas.caption)
+                            Text(L("Ребёнок")).font(Atlas.caption)
                         }
                         .foregroundStyle(Atlas.ink)
                         .frame(maxWidth: .infinity, minHeight: 120)
@@ -105,12 +105,12 @@ private struct ClinicContent: View {
                                                                 style: StrokeStyle(lineWidth: Atlas.line, dash: [6, 4])))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Добавить ребёнка")
+                    .accessibilityLabel(L("Добавить ребёнка"))
                 }
             }
             if clinic.active.isEmpty {
-                Text(clinic.role == .clinician ? "Добавьте первого ребёнка: код центра, значок и прозвище."
-                                               : "Пока здесь никого нет. Специалист добавит ребёнка после входа по Face ID.")
+                Text(clinic.role == .clinician ? L("Добавьте первого ребёнка: код центра, значок и прозвище.")
+                                               : L("Пока здесь никого нет. Специалист добавит ребёнка после входа по Face ID."))
                     .font(Atlas.body)
                     .foregroundStyle(Atlas.inkSoft)
                     .padding(.top, 8)
@@ -138,30 +138,30 @@ private struct ClinicContent: View {
     @ViewBuilder private var footer: some View {
         if let r = clinic.playing {
             HStack(spacing: 12) {
-                Button { app.openProbe() } label: { Text("Начать занятие") }
+                Button { app.openProbe() } label: { Text(L("Начать занятие")) }
                     .buttonStyle(AtlasPrimaryButton())
                     .disabled(!(app.eyeTrackingSupported || app.autoplay == "probe"))
                 if clinic.role == .clinician {
-                    Button { detail = ChildSheet(id: r.id) } label: { Text("Профиль и графики") }
+                    Button { detail = ChildSheet(id: r.id) } label: { Text(L("Профиль и графики")) }
                         .buttonStyle(AtlasSecondaryButton())
                 }
                 if clinic.role == .parent {
-                    Button { parentReport = ChildSheet(id: r.id) } label: { Text("Как дела") }
+                    Button { parentReport = ChildSheet(id: r.id) } label: { Text(L("Как дела")) }
                         .buttonStyle(AtlasSecondaryButton())
                 }
                 Spacer()
                 Text(courseLine(r)).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
             }
             if !app.eyeTrackingSupported {
-                Text("Проба меряет взгляд: на этом iPhone нет трекинга лица.").font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
+                Text(L("Проба меряет взгляд: на этом iPhone нет трекинга лица.")).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
             }
         }
     }
 
     private func courseLine(_ r: ChildRecord) -> String {
-        guard let c = r.openCourse else { return "Курс не начат: занятие пойдёт без номера" }
+        guard let c = r.openCourse else { return L("Курс не начат: занятие пойдёт без номера") }
         let done = r.sessions(of: c.id).count
-        return "\(c.title): занятие \(done + 1) из \(c.plannedSessions), \(ClinicText.place(c.runsAt))"
+        return L("{0}: занятие {1} из {2}, {3}", c.title, done + 1, c.plannedSessions, ClinicText.place(c.runsAt))
     }
 }
 
@@ -178,16 +178,16 @@ private struct AddChildSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Код центра") {
-                    TextField("Например, А-017", text: $code).textInputAutocapitalization(.characters)
+                Section(L("Код центра")) {
+                    TextField(L("Например, А-017"), text: $code).textInputAutocapitalization(.characters)
                 }
-                Section("Прозвище на плитке (не имя)") {
-                    TextField("Например, Лиса", text: $nickname)
+                Section(L("Прозвище на плитке (не имя)")) {
+                    TextField(L("Например, Лиса"), text: $nickname)
                 }
-                Section("Год рождения") {
-                    TextField("Необязательно", text: $birthYear).keyboardType(.numberPad)
+                Section(L("Год рождения")) {
+                    TextField(L("Необязательно"), text: $birthYear).keyboardType(.numberPad)
                 }
-                Section("Значок") {
+                Section(L("Значок")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
                         ForEach(0..<Child.emblemCount, id: \.self) { i in
                             Button { emblem = i } label: {
@@ -203,11 +203,11 @@ private struct AddChildSheet: View {
                 }
                 if let p = clinic.problem { Text(p).foregroundStyle(Atlas.vermilion) }
             }
-            .navigationTitle("Новый ребёнок")
+            .navigationTitle(L("Новый ребёнок"))
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(L("Отмена")) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Добавить") {
+                    Button(L("Добавить")) {
                         let year = Int(birthYear.trimmingCharacters(in: .whitespaces))
                         if clinic.addChild(code: code, emblem: emblem, nickname: nickname, birthYear: year) != nil { dismiss() }
                     }
@@ -228,14 +228,14 @@ private struct PinSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                SecureField("PIN родителя", text: $pin).keyboardType(.numberPad)
-                if wrong { Text("Не тот PIN").foregroundStyle(Atlas.vermilion) }
+                SecureField(L("PIN родителя"), text: $pin).keyboardType(.numberPad)
+                if wrong { Text(L("Не тот PIN")).foregroundStyle(Atlas.vermilion) }
             }
-            .navigationTitle("Для родителей")
+            .navigationTitle(L("Для родителей"))
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(L("Отмена")) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Открыть") {
+                    Button(L("Открыть")) {
                         if clinic.unlockParent(pin: pin) { dismiss() } else { wrong = true }
                     }
                 }
@@ -255,11 +255,11 @@ private struct ParentSheet: View {
                 if let r = clinic.record(childID), let c = r.openCourse ?? r.courses.last {
                     ParentSummary(data: CourseData(record: r, course: c)).padding(20)
                 } else {
-                    Text("Курс ещё не начат.").font(Atlas.body).padding(20)
+                    Text(L("Курс ещё не начат.")).font(Atlas.body).padding(20)
                 }
             }
             .navigationTitle(clinic.record(childID)?.child.tileName ?? "")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Готово")) { dismiss() } } }
         }
     }
 }
@@ -271,7 +271,7 @@ private struct ChildDetailSheet: View {
     @ObservedObject var clinic: ClinicModel
     let childID: UUID
     @Environment(\.dismiss) private var dismiss
-    @State private var courseTitle = "Курс 1"
+    @State private var courseTitle = L("Курс 1")
     @State private var planned = 30
     @State private var place = Session.Place.clinic
     @State private var procedureKind = Procedure.Kind.tms
@@ -296,10 +296,10 @@ private struct ChildDetailSheet: View {
                 }
             }
             .navigationTitle(clinic.record(childID)?.child.code ?? "")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
-            .confirmationDialog("Убрать ребёнка в архив? Записи и графики останутся.", isPresented: $confirmArchive,
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Готово")) { dismiss() } } }
+            .confirmationDialog(L("Убрать ребёнка в архив? Записи и графики останутся."), isPresented: $confirmArchive,
                                 titleVisibility: .visible) {
-                Button("В архив", role: .destructive) {
+                Button(L("В архив"), role: .destructive) {
                     clinic.archive(child: childID)
                     dismiss()
                 }
@@ -312,21 +312,21 @@ private struct ChildDetailSheet: View {
             Image(systemName: ClinicText.emblem(r.child.emblem)).font(.system(size: 34)).foregroundStyle(Atlas.ink)
             VStack(alignment: .leading, spacing: 2) {
                 Text(r.child.tileName).font(Atlas.title).foregroundStyle(Atlas.ink)
-                Text([r.child.code, r.child.birthYear.map { "\($0) г. р." }].compactMap { $0 }.joined(separator: " · "))
+                Text([r.child.code, r.child.birthYear.map { L("{0} г. р.", $0) }].compactMap { $0 }.joined(separator: " · "))
                     .font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
             }
             Spacer()
-            Button("В архив") { confirmArchive = true }.foregroundStyle(Atlas.vermilion)
+            Button(L("В архив")) { confirmArchive = true }.foregroundStyle(Atlas.vermilion)
         }
     }
 
     @ViewBuilder private func course(_ r: ChildRecord) -> some View {
         if let c = r.openCourse {
             VStack(alignment: .leading, spacing: 10) {
-                Text("\(c.title): занятий \(r.sessions(of: c.id).count) из \(c.plannedSessions), \(ClinicText.place(c.runsAt))")
+                Text(L("{0}: занятий {1} из {2}, {3}", c.title, r.sessions(of: c.id).count, c.plannedSessions, ClinicText.place(c.runsAt)))
                     .font(Atlas.title).foregroundStyle(Atlas.ink)
                 HStack {
-                    Picker("Процедура", selection: $procedureKind) {
+                    Picker(L("Процедура"), selection: $procedureKind) {
                         ForEach(Procedure.Kind.allCases, id: \.self) { k in Text(ClinicText.procedure(k)).tag(k) }
                     }
                     .pickerStyle(.segmented)
@@ -334,26 +334,26 @@ private struct ChildDetailSheet: View {
                     DatePicker("", selection: $procedureDate, displayedComponents: [.date, .hourAndMinute]).labelsHidden()
                 }
                 HStack {
-                    TextField("Название аппарата, если нужно (например, BrainsWay)", text: $procedureLabel)
+                    TextField(L("Название аппарата, если нужно (например, BrainsWay)"), text: $procedureLabel)
                         .textFieldStyle(.roundedBorder)
-                    Button("Отметить процедуру") {
+                    Button(L("Отметить процедуру")) {
                         clinic.markProcedure(child: r.id, course: c.id, kind: procedureKind, date: procedureDate, label: procedureLabel)
                         procedureLabel = ""
                     }
                     .buttonStyle(AtlasSecondaryButton())
                 }
-                Button("Закрыть курс") { clinic.closeCourse(child: r.id, course: c.id) }
+                Button(L("Закрыть курс")) { clinic.closeCourse(child: r.id, course: c.id) }
                     .foregroundStyle(Atlas.inkSoft)
             }
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Новый курс").font(Atlas.title).foregroundStyle(Atlas.ink)
+                Text(L("Новый курс")).font(Atlas.title).foregroundStyle(Atlas.ink)
                 HStack {
-                    TextField("Название", text: $courseTitle).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
-                    Stepper("Занятий: \(planned)", value: $planned, in: 5...60)
-                    Picker("Где", selection: $place) {
-                        Text("В центре").tag(Session.Place.clinic)
-                        Text("Дома").tag(Session.Place.home)
+                    TextField(L("Название"), text: $courseTitle).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
+                    Stepper(L("Занятий: {0}", planned), value: $planned, in: 5...60)
+                    Picker(L("Где"), selection: $place) {
+                        Text(L("В центре")).tag(Session.Place.clinic)
+                        Text(L("Дома")).tag(Session.Place.home)
                     }
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 220)
@@ -361,7 +361,7 @@ private struct ChildDetailSheet: View {
                 HStack {
                     Button("25") { planned = 25 }.buttonStyle(AtlasSecondaryButton())
                     Button("30") { planned = 30 }.buttonStyle(AtlasSecondaryButton())
-                    Button("Начать курс") { clinic.startCourse(child: r.id, title: courseTitle, planned: planned, place: place) }
+                    Button(L("Начать курс")) { clinic.startCourse(child: r.id, title: courseTitle, planned: planned, place: place) }
                         .buttonStyle(AtlasPrimaryButton())
                 }
             }
@@ -374,14 +374,15 @@ private struct ChildDetailSheet: View {
         for m in ProbeMetric.charted { sems[m] = CourseData.sem(m, records: clinic.records) }
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Графики курса «\(c.title)»").font(Atlas.title).foregroundStyle(Atlas.ink)
+                Text(L("Графики курса «{0}»", c.title)).font(Atlas.title).foregroundStyle(Atlas.ink)
                 Spacer()
                 Button {
-                    exported = ClinicExport.files(data, sems: sems, store: clinic.store)
-                } label: { Label("Подготовить выгрузку", systemImage: "doc.richtext") }
+                    // The files for the center stay in Russian, whatever the interface's language.
+                    exported = Loc.inRussian { ClinicExport.files(data, sems: sems, store: clinic.store) }
+                } label: { Label(L("Подготовить выгрузку"), systemImage: "doc.richtext") }
                     .buttonStyle(AtlasSecondaryButton())
                 if !exported.isEmpty {
-                    ShareLink(items: exported) { Label("Отправить PDF, таблицу и ZIP", systemImage: "square.and.arrow.up") }
+                    ShareLink(items: exported) { Label(L("Отправить PDF, таблицу и ZIP"), systemImage: "square.and.arrow.up") }
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -393,7 +394,7 @@ private struct ChildDetailSheet: View {
 
     private func sessions(_ r: ChildRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Занятия").font(Atlas.title).foregroundStyle(Atlas.ink)
+            Text(L("Занятия")).font(Atlas.title).foregroundStyle(Atlas.ink)
             ForEach(r.sessions.reversed()) { s in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(s.number.map { "№ \($0)" } ?? "—").monospacedDigit().frame(width: 44, alignment: .leading)
@@ -403,32 +404,32 @@ private struct ChildDetailSheet: View {
                             .monospacedDigit()
                     }
                     Spacer()
-                    Text(s.probe == nil ? "без пробы" : (s.onChart ? "на графике" : "вне графика"))
+                    Text(s.probe == nil ? L("без пробы") : (s.onChart ? L("на графике") : L("вне графика")))
                         .foregroundStyle(s.onChart ? Atlas.ink : Atlas.inkSoft)
                     if !s.tags.isEmpty { Text(s.tags.joined(separator: ", ")).foregroundStyle(Atlas.inkSoft) }
                     Menu {
-                        ForEach(["после ТМС", "после лазера", "после нейрофидбека", "сонный", "болеет"], id: \.self) { tag in
+                        ForEach([L("после ТМС"), L("после лазера"), L("после нейрофидбека"), L("сонный"), L("болеет")], id: \.self) { tag in
                             Button(tag) { clinic.tagSession(child: r.id, session: s.id, tags: s.tags + [tag], note: s.note) }
                         }
-                        Button("Снять теги") { clinic.tagSession(child: r.id, session: s.id, tags: [], note: s.note) }
-                        Button("Аннулировать (ошибка, не тот ребёнок)", role: .destructive) {
-                            clinic.voidSession(child: r.id, session: s.id, reason: "аннулировано специалистом")
+                        Button(L("Снять теги")) { clinic.tagSession(child: r.id, session: s.id, tags: [], note: s.note) }
+                        Button(L("Аннулировать (ошибка, не тот ребёнок)"), role: .destructive) {
+                            clinic.voidSession(child: r.id, session: s.id, reason: L("аннулировано специалистом"))
                         }
                     } label: { Image(systemName: "ellipsis.circle").frame(width: 32, height: 32) }
                 }
                 .font(Atlas.caption)
                 .foregroundStyle(Atlas.ink)
             }
-            if r.sessions.isEmpty { Text("Занятий пока нет.").font(Atlas.caption).foregroundStyle(Atlas.inkSoft) }
+            if r.sessions.isEmpty { Text(L("Занятий пока нет.")).font(Atlas.caption).foregroundStyle(Atlas.inkSoft) }
         }
     }
 
     private var parentPinRow: some View {
         HStack {
-            Text(clinic.hasParentPin ? "PIN родителя задан" : "PIN родителя не задан").font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
-            SecureField("Новый PIN, 4–8 цифр", text: $parentPin).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+            Text(clinic.hasParentPin ? L("PIN родителя задан") : L("PIN родителя не задан")).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
+            SecureField(L("Новый PIN, 4–8 цифр"), text: $parentPin).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 200)
-            Button("Сохранить PIN") {
+            Button(L("Сохранить PIN")) {
                 if clinic.setParentPin(parentPin) { parentPin = "" }
             }
             .disabled(!ClinicModel.validPin(parentPin))
