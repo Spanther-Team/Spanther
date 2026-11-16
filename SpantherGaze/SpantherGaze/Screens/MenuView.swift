@@ -267,6 +267,9 @@ struct MenuView: View {
                 .foregroundStyle(Atlas.ink)
                 .frame(minHeight: 44)
         }
+        // A cream sign over the grass, so the line stays readable where the grass reaches it (iPhone SE).
+        .padding(.horizontal, 18)
+        .background(InkSlab(shape: Slant(lean: 8), fill: Atlas.paper, depth: 3))
     }
 }
 

@@ -113,6 +113,32 @@ enum Atlas {
         return p
     }
 
+    /// A cel-shaded orb: a flat body, a shade crescent on the lower right, a cream glint on the upper left, and the
+    /// ink line round it. The warm-up's dot and the rhythm mode's notes.
+    static func orb(_ g: inout GraphicsContext, _ p: CGPoint, _ r: CGFloat, fill: Color) {
+        let body = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+        g.fill(body, with: .color(fill))
+        var shade = Path()
+        shade.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+        shade.addEllipse(in: CGRect(x: p.x - r * 1.25, y: p.y - r * 1.3, width: 2 * r, height: 2 * r))
+        g.fill(shade, with: .color(ink.opacity(0.18)), style: FillStyle(eoFill: true))
+        g.fill(Path(ellipseIn: CGRect(x: p.x - r * 0.6, y: p.y - r * 0.65, width: r * 0.55, height: r * 0.4)),
+               with: .color(cream.opacity(0.9)))
+        g.stroke(body, with: .color(ink), lineWidth: line)
+    }
+
+    /// Rings that pulse out of a target while the eyes are on it: two at a time, 0.6 s each, from `from` pt out by
+    /// `reach` pt, fading as they go. `k`: how much the eyes are on it, 0...1. They grow, they do not flash.
+    static func pulses(_ g: inout GraphicsContext, _ p: CGPoint, from: CGFloat, reach: CGFloat, host: Double, k: Double) {
+        guard k > 0 else { return }
+        for phase in [0.0, 0.5] {
+            let f = CGFloat((host * 1.6 + phase).truncatingRemainder(dividingBy: 1))
+            let pr = from + reach * f
+            g.stroke(Path(ellipseIn: CGRect(x: p.x - pr, y: p.y - pr, width: 2 * pr, height: 2 * pr)),
+                     with: .color(energy.opacity(Double(1 - f) * k)), lineWidth: 3)
+        }
+    }
+
     /// A closed eyelid with three lashes, `w` wide: the eye a side note asks for.
     static func closedEye(_ c: CGPoint, _ w: CGFloat) -> Path {
         var p = Path()

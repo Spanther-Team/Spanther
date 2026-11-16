@@ -350,10 +350,12 @@ private struct RhythmPlayView: View {
                   s.notes[i].time - s.notes[i - 1].time < 3 else { continue }
             let alpha = 0.22 * Self.settle(age: t - b, to: 0)
             guard alpha > 0 else { continue }
+            // A gold ribbon in an ink edge between two notes played one after the other.
             var line = Path()
             line.move(to: cg(s.points[i - 1]))
             line.addLine(to: cg(s.points[i]))
-            g.stroke(line, with: .color(Atlas.ink.opacity(alpha)), lineWidth: 1)
+            g.stroke(line, with: .color(Atlas.ink.opacity(alpha * 2.2)), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+            g.stroke(line, with: .color(Atlas.gold.opacity(min(1, alpha * 4))), style: StrokeStyle(lineWidth: 3, lineCap: .round))
         }
 
         // Where to look after the next note.
@@ -376,9 +378,13 @@ private struct RhythmPlayView: View {
             var gg = g
             gg.opacity = min(1, a / 0.15)
             let k = i == lit ? light : 0
-            if k > 0 { drawLight(&gg, p, (dialR - 3) * CGFloat(0.7 + 0.3 * k), k) }
-            gg.stroke(Atlas.dial(p, dialR, 1), with: .color(Atlas.ink.opacity(0.12)), lineWidth: 1.5)
-            gg.stroke(Atlas.dial(p, dialR, a), with: .color(Atlas.ink), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            if k > 0 {
+                drawLight(&gg, p, (dialR - 3) * CGFloat(0.7 + 0.3 * k), k)
+                Atlas.pulses(&gg, p, from: dialR, reach: 16 * scale, host: host, k: k)
+            }
+            gg.stroke(Atlas.dial(p, dialR, 1), with: .color(Atlas.ink.opacity(0.18)), lineWidth: 1.5)
+            gg.stroke(Atlas.dial(p, dialR, a), with: .color(Atlas.ink), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            gg.stroke(Atlas.dial(p, dialR, a), with: .color(Atlas.gold), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             // The hand's tip, and the mark it reaches on the beat.
             let ang = -Double.pi / 2 + 2 * .pi * a
             let tip = Atlas.polar(p, dialR, ang)
@@ -387,7 +393,8 @@ private struct RhythmPlayView: View {
             mark.move(to: CGPoint(x: p.x, y: p.y - dialR - 6 * scale))
             mark.addLine(to: CGPoint(x: p.x, y: p.y - dialR + 6 * scale))
             gg.stroke(mark, with: .color(Atlas.vermilion), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-            gg.fill(Atlas.star(p, r * CGFloat(1 + 0.15 * k)), with: .color(Atlas.ink))
+            // The note: a sky orb, amber once the eyes are locked on it.
+            Atlas.orb(&gg, p, r * CGFloat(1 + 0.15 * k), fill: k > 0 ? Atlas.energy : Atlas.sky)
             if n.side != .any {
                 let x = n.side == .left ? p.x - dialR - 16 : p.x + dialR + 16
                 gg.stroke(Atlas.closedEye(CGPoint(x: x, y: p.y), 16), with: .color(Atlas.ink),
@@ -435,7 +442,7 @@ private struct RhythmPlayView: View {
     /// A warm wash under a target the aim is locked on, like a lamp held over the chart.
     private func drawLight(_ g: inout GraphicsContext, _ p: CGPoint, _ radius: CGFloat, _ k: Double) {
         g.fill(Path(ellipseIn: CGRect(x: p.x - radius, y: p.y - radius, width: 2 * radius, height: 2 * radius)),
-               with: .color(Atlas.vermilion.opacity(0.17 * k)))
+               with: .color(Atlas.energy.opacity(0.22 * k)))
     }
 
     /// How much of a played note's mark is left `age` seconds after it was judged: all of it for 4 s, then it fades
@@ -456,14 +463,15 @@ private struct RhythmPlayView: View {
             mark.stroke(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)),
                         with: .color(Atlas.missGrey.opacity(0.5)), lineWidth: 1)
         } else {
-            mark.fill(Atlas.star(p, 5), with: .color(j == .perfect ? Atlas.vermilion : Atlas.ink.opacity(0.6)))
+            mark.fill(Atlas.star(p, 6), with: .color(j == .perfect ? Atlas.energy : Atlas.gold))
+            mark.stroke(Atlas.star(p, 6), with: .color(Atlas.ink), lineWidth: 1)
             if age < 0.35 {
                 let k = age / 0.35
                 var gg = g
                 gg.opacity = 1 - k
                 let rr = dialR + 18 * scale * CGFloat(k)
                 gg.stroke(Path(ellipseIn: CGRect(x: p.x - rr, y: p.y - rr, width: 2 * rr, height: 2 * rr)),
-                          with: .color(j == .perfect ? Atlas.vermilion : Atlas.ink), lineWidth: 2.5 * (1 - k) + 0.5)
+                          with: .color(j == .perfect ? Atlas.energy : Atlas.gold), lineWidth: 4 * (1 - k) + 0.5)
             }
         }
         if age < 0.6 {
@@ -490,7 +498,8 @@ private struct RhythmPlayView: View {
         mark.move(to: CGPoint(x: p.x, y: p.y - 50 * k))
         mark.addLine(to: CGPoint(x: p.x, y: p.y - 38 * k))
         g.stroke(mark, with: .color(Atlas.vermilion), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-        g.fill(Atlas.star(p, 22 * k * CGFloat(1 + 0.12 * light)), with: .color(Atlas.ink))
+        Atlas.pulses(&g, p, from: 30 * k, reach: 18 * k, host: host, k: light)
+        Atlas.orb(&g, p, 22 * k * CGFloat(1 + 0.12 * light), fill: light > 0 ? Atlas.energy : Atlas.sky)
     }
 
     private func drawHUD(_ g: inout GraphicsContext, _ s: RhythmSession, _ t: Double, _ size: CGSize) {

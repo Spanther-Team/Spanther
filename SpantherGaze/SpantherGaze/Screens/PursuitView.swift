@@ -2,7 +2,8 @@ import QuartzCore
 import SwiftUI
 
 /// The 60-second warm-up: one dot glides along a horizontal line, then a vertical one, then a figure of eight, and
-/// the player follows it with the eyes (or a finger). Plain paper and no garden: nothing else on the screen moves.
+/// the player follows it with the eyes (or a finger). A cream page and no garden: only the orb, its ribbon and the
+/// rings that pulse out of it while the eyes are on it move.
 /// The canvas spans the whole screen, so its points are screen pt, the space the gaze is in.
 struct PursuitView: View {
     @EnvironmentObject var app: AppModel
@@ -116,27 +117,45 @@ private struct PursuitPlayView: View {
         let at = s.byEye ? app.gazePoint : app.pursuitTouch
         let ringR = 22 * k
 
+        // How near the player is: 1 on the dot, 0 outside its radius, opening over the last third of the radius, so
+        // nothing blinks when the gaze wavers at the edge.
+        var near = 0.0
         if s.phase == .running, let at {
-            // A warm light under the dot while the player is near it. It opens and closes with the distance, over
-            // the last third of the radius, so nothing blinks when the gaze wavers at the edge.
             let d = at.distance(to: target)
-            let near = min(1, max(0, (s.radiusPt - d) / (s.radiusPt * 0.3)))
-            if near > 0 {
-                let r = 32 * k
-                g.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
-                       with: .color(Atlas.vermilion.opacity(0.17 * near)))
+            near = min(1, max(0, (s.radiusPt - d) / (s.radiusPt * 0.3)))
+        }
+        if s.phase == .running {
+            // The ribbon: where the dot was over the last 0.3 s, a gold band in an ink edge that tapers to nothing.
+            let steps = 10, dt = 0.03
+            var trail: [CGPoint] = [p]
+            for i in 1...steps { trail.append(cg(s.target(host: host - dt * Double(i)))) }
+            for pass in 0..<2 {
+                for i in 0..<steps {
+                    let w = 11 * k * CGFloat(steps - i) / CGFloat(steps)
+                    var seg = Path()
+                    seg.move(to: trail[i])
+                    seg.addLine(to: trail[i + 1])
+                    g.stroke(seg, with: .color(pass == 0 ? Atlas.ink.opacity(0.55) : Atlas.gold.opacity(0.9)),
+                             style: StrokeStyle(lineWidth: pass == 0 ? w + 3 : w, lineCap: .round))
+                }
             }
         }
-        g.stroke(Atlas.dial(p, ringR, 1), with: .color(Atlas.ink.opacity(0.14)), lineWidth: 1.5)
+        if near > 0 {
+            // On the dot: warm light under it and rings that pulse out of it, two at a time, as long as the eyes stay.
+            let r = 34 * k
+            g.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
+                   with: .color(Atlas.energy.opacity(0.2 * near)))
+            Atlas.pulses(&g, p, from: ringR, reach: 22 * k, host: host, k: near)
+        }
+        g.stroke(Atlas.dial(p, ringR, 1), with: .color(Atlas.ink.opacity(0.25)), lineWidth: 1.5)
         if s.phase == .countdown {
             // The ring closes while the dot waits; it starts to move when the ring is whole.
             let waited = min(1, max(0, 1 + t / PursuitSession.countdownSec))
-            g.stroke(Atlas.dial(p, ringR, waited), with: .color(Atlas.ink), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            g.stroke(Atlas.dial(p, ringR, waited), with: .color(Atlas.ink), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            g.stroke(Atlas.dial(p, ringR, waited), with: .color(Atlas.energy), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
         }
-        let dotR = 10 * k
-        g.fill(Path(ellipseIn: CGRect(x: p.x - dotR, y: p.y - dotR, width: 2 * dotR, height: 2 * dotR)),
-               with: .color(Atlas.vermilion))
-        g.fill(Path(ellipseIn: CGRect(x: p.x - 2.5, y: p.y - 2.5, width: 5, height: 5)), with: .color(Atlas.paper))
+        // The orb: gold, amber while the eyes are on it.
+        Atlas.orb(&g, p, 13 * k, fill: near > 0.5 ? Atlas.energy : Atlas.gold)
 
         if s.phase == .running { drawProgress(&g, size, min(1, max(0, t / s.plan.durationSec))) }
 

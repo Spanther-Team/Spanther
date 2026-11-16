@@ -169,7 +169,10 @@ private struct ProbeDone: View {
                     .buttonStyle(AtlasPrimaryButton())
             }
         }
+        // The buttons stretch, so the plate gets a width of its own instead of the whole screen.
+        .frame(maxWidth: 560)
         .atlasPlate(padding: 20)
+        .padding(.horizontal, 48)
     }
 }
 

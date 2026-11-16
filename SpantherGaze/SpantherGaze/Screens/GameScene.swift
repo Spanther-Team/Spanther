@@ -91,6 +91,9 @@ final class GameScene: SKScene {
     private var chargeToneAt = (id: -1, time: 0.0)
     private var bursts: UInt64 = 0
     private var gardenNode: GardenNode?
+    /// The sunlit sky and the golden motes drifting up through it, behind the garden and the play.
+    private var skyNode: SKSpriteNode?
+    private var motes: SKEmitterNode?
     private var frameIndex = 0
 
     #if DEBUG
@@ -142,6 +145,7 @@ final class GameScene: SKScene {
         gardenMade.zPosition = -10
         addChild(gardenMade)
         gardenNode = gardenMade
+        addSkyAndMotes()
         // Earth: only the cap that shows above the bottom edge, engraved like a globe on an old chart (one baked
         // quad). In landscape the whole circle would be about 3,100 pt across.
         let h = Double(size.height)
@@ -154,6 +158,7 @@ final class GameScene: SKScene {
             earth.name = "earth"
             world.addChild(earth)
         }
+        addGrass(m, scale: scale)
         reticle.texture = SceneArt.circle(radius: 14, stroke: Atlas.UI.ink.withAlphaComponent(0.7).cgColor, width: 2,
                                           scale: scale)
         reticle.size = CGSize(width: 32, height: 32)
@@ -199,6 +204,74 @@ final class GameScene: SKScene {
     }
 
     /// Touch mode: one tap on the energy bar. Three inside the window reload.
+    /// The sky (a small baked gradient stretched over the screen) and golden motes rising slowly through it. They sit
+    /// outside `world`, so they stay still when Earth shakes. About 20 motes at a time, soft and slow: light in the
+    /// air, not something to chase.
+    private func addSkyAndMotes() {
+        skyNode?.removeFromParent()
+        if let t = SceneArt.sky() {
+            let sky = SKSpriteNode(texture: t, size: size)
+            sky.anchorPoint = .zero
+            sky.zPosition = -20
+            addChild(sky)
+            skyNode = sky
+        }
+        motes?.removeFromParent()
+        guard let t = SceneArt.glow(SceneArt.mutedGold, alpha: 0.95, scale: 1) else { return }
+        let e = SKEmitterNode()
+        e.particleTexture = t
+        e.particleBirthRate = 2.2
+        e.particleLifetime = 10
+        e.particleLifetimeRange = 3
+        e.position = CGPoint(x: size.width / 2, y: size.height * 0.4)
+        e.particlePositionRange = CGVector(dx: size.width, dy: size.height * 0.6)
+        e.emissionAngle = .pi / 2
+        e.emissionAngleRange = 0.7
+        e.particleSpeed = 9
+        e.particleSpeedRange = 5
+        e.particleScale = 0.17
+        e.particleScaleRange = 0.08
+        e.particleAlpha = 0
+        e.particleAlphaSequence = SKKeyframeSequence(keyframeValues: [0.0, 0.85, 0.85, 0.0], times: [0, 0.2, 0.75, 1])
+        e.particleBlendMode = .alpha
+        e.zPosition = -5
+        e.advanceSimulationTime(10)
+        addChild(e)
+        motes = e
+    }
+
+    /// Grass along the hill's crest in short strips, each turned to the slope and swaying from its roots in the wind
+    /// (FeelShaders.windSway anchored at the bottom). Three wind phases, so neighbouring strips do not move as one.
+    private func addGrass(_ m: GameModel, scale: CGFloat) {
+        let strip: CGFloat = 96, high: CGFloat = 22
+        let h = Double(size.height)
+        let winds = (0..<3).map { k in
+            SKShader(source: FeelShaders.windSway, uniforms: [
+                SKUniform(name: "u_amplitude", float: 0.03),
+                SKUniform(name: "u_speed", float: 1.3 + 0.25 * Float(k)),
+                SKUniform(name: "u_phase", float: 2.1 * Float(k)),
+                SKUniform(name: "u_anchor", float: 0),
+            ])
+        }
+        var x: CGFloat = -10, k = 0
+        while x < size.width + 10 {
+            let cx = Double(x + strip / 2)
+            let left = h - m.earthSurfaceY(atX: cx - 20), right = h - m.earthSurfaceY(atX: cx + 20)
+            let tilt: Double = atan2(right - left, 40.0)
+            if let t = SceneArt.grass(width: strip, height: high, seed: UInt64(k + 1) &* 0x9E37_79B9, scale: scale) {
+                let g = SKSpriteNode(texture: t, size: CGSize(width: strip + 12, height: high))
+                g.anchorPoint = CGPoint(x: 0.5, y: 0)
+                g.position = CGPoint(x: CGFloat(cx), y: CGFloat(h - m.earthSurfaceY(atX: cx)) - 3)
+                g.zRotation = CGFloat(tilt)
+                g.shader = winds[k % winds.count]
+                g.zPosition = 1
+                world.addChild(g)
+            }
+            x += strip
+            k += 1
+        }
+    }
+
     func reloadTap() {
         guard useTouch, let m = model else { return }
         let now = CACurrentMediaTime()
