@@ -76,17 +76,25 @@ struct RootView: View {
             .transition(screenTransition)
             if app.showDebug { DebugOverlay().allowsHitTesting(false) }
         }
-        // A new screen springs in from the right; the old one fades under it. Never into the probe: its 90 seconds
-        // start with the screen and must start on a still page.
+        // A new menu screen springs in from the right; the old one fades under it. Never into the probe: its 90
+        // seconds start with the screen and must start on a still page.
         .animation(app.route == .probe ? nil : Atlas.snap, value: app.route)
         // Ink on paper everywhere but the wink test, which keeps the old dark look.
         .preferredColorScheme(app.route == .winkTest ? .dark : .light)
     }
 
+    /// The menu, the result and the clinic spring in. The play screens fill the whole display and size their play
+    /// when they appear, and a screen that slides or scales in is laid out in the safe area until it lands (on the
+    /// phone the meteors kept 734 x 372 of 852 x 393 pt), so they only fade in, at their full size.
     private var screenTransition: AnyTransition {
         if reduceMotion { return .opacity }
-        return .asymmetric(insertion: .offset(x: 90).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
-                           removal: .opacity)
+        switch app.route {
+        case .menu, .result, .clinic:
+            return .asymmetric(insertion: .offset(x: 90).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
+                               removal: .opacity)
+        default:
+            return .opacity
+        }
     }
 
     /// The sunlit sky with the living garden behind the menu, the clinic and the calibration result; a plain cream

@@ -177,7 +177,8 @@ final class AppModel: ObservableObject {
     /// Both models' mean miss on the check dots (screen pt), for the session CSV.
     private var modelCheck: (headMissPt: Double?, screenMissPt: Double?) = (nil, nil)
     /// The session's one calibration, once its check dots are done. Every mode plays on it: the meteors, the rhythm
-    /// mode, the warm-up and the clinic's probe. It is made right after the start screen (`openSession`) and again
+    /// mode, the warm-up and the clinic's probe. It is made right after the start screen (`openSession`), or comes
+    /// back from an earlier launch within 12 hours (`restoreKeptCalibration`), and is made again
     /// only when the player asks («Перекалибровать» on the menu, «Калибровка» in the meteors' pause) or another
     /// child takes the phone; night vision drops it, since the model then reads other features. The fields above
     /// are what the frames are read with now: this one's, or a new calibration's while it is being made.
@@ -319,12 +320,70 @@ final class AppModel: ObservableObject {
     }
 
     /// Forgets the session's calibration and everything learned on it: another child, or night vision switched.
-    /// The next eye mode calibrates first.
+    /// The next eye mode calibrates first, and the next launch does not bring the old one back.
     private func dropCalibration() {
         calibration = nil
         stash = nil
         report = nil
         clearLive()
+        UserDefaults.standard.removeObject(forKey: Self.keptCalibrationKey)
+    }
+
+    /// Plays on a calibration made before: its models, check, grip and report, with a fresh aim adapter.
+    private func adopt(_ c: SessionCalibration) {
+        fitted = (c.head, c.screen)
+        modelCheck = (c.headMissPt, c.screenMissPt)
+        grip = (c.reference, c.distanceM)
+        report = c.report
+        play(c.model)
+    }
+
+    // MARK: the calibration kept between launches
+
+    /// Where the session's calibration is kept between launches (`StoredCalibration`, as JSON).
+    private static let keptCalibrationKey = "keptCalibration"
+
+    /// The app's version and build, e.g. "1.0.3 (7)": a calibration kept by another build is not used.
+    private static let build: String = {
+        let info = Bundle.main.infoDictionary
+        return "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }()
+
+    /// The window's size (screen pt): every eye mode fills it, the calibration's dots included.
+    private var windowSize: Vec2? {
+        guard let s = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return nil }
+        let b = s.coordinateSpace.bounds.size
+        return Vec2(Double(b.width), Double(b.height))
+    }
+
+    /// Keeps the session's new calibration on this phone, so that the next launch within 12 hours plays on it.
+    private func keepCalibration(_ c: SessionCalibration) {
+        guard let w = windowSize else { return }
+        let kept = StoredCalibration(model: c.model, head: c.head, screenFit: c.screen, headMissPt: c.headMissPt,
+                                     screenMissPt: c.screenMissPt, report: c.report, reference: c.reference,
+                                     distanceM: c.distanceM, childID: c.childID, madeAt: c.madeAt, night: nightVision,
+                                     screenPt: w, build: Self.build)
+        guard let data = try? JSONEncoder().encode(kept) else { return }
+        UserDefaults.standard.set(data, forKey: Self.keptCalibrationKey)
+    }
+
+    /// iOS ends an app it has sent to the background whenever it wants the memory, so coming back to the game is
+    /// often a new launch. The calibration kept from an earlier launch plays again when it is the same child's, with
+    /// the same night vision, on this screen and build, and less than 12 hours old. The aim adapter starts afresh and
+    /// learns again in play; the new session CSV says which model plays. False: there is none that fits.
+    private func restoreKeptCalibration() -> Bool {
+        guard let w = windowSize, let data = UserDefaults.standard.data(forKey: Self.keptCalibrationKey),
+              let kept = try? JSONDecoder().decode(StoredCalibration.self, from: data),
+              kept.fits(child: clinic.playingID, night: nightVision, screenPt: w, build: Self.build, now: Date()),
+              let m = kept.model else { return false }
+        let c = SessionCalibration(model: m, shadow: kept.shadow, head: kept.head, screen: kept.screenFit,
+                                   headMissPt: kept.headMissPt, screenMissPt: kept.screenMissPt, report: kept.report,
+                                   reference: kept.reference, distanceM: kept.distanceM, childID: kept.childID,
+                                   madeAt: kept.madeAt)
+        adopt(c)
+        calibration = c
+        logModel()
+        return true
     }
 
     /// Clears the models the frames are read with: a new calibration is being made, or there is none.
@@ -1083,12 +1142,14 @@ final class AppModel: ObservableObject {
     // MARK: calibration
 
     /// The start screen has let the player in: on an iPhone that tracks faces, the session's one calibration comes
-    /// first, and every mode plays on it. The CI bots and the report screenshots go without.
+    /// first, and every mode plays on it. The same child's calibration from a launch less than 12 hours ago is that one
+    /// (`restoreKeptCalibration`). The CI bots and the report screenshots go without.
     func openSession() {
         guard eyeTrackingSupported, model == nil, route == .menu, autoplay == nil else { return }
         #if DEBUG
         guard demoReport == nil else { return }
         #endif
+        if restoreKeptCalibration() { return }
         beginCalibration(then: .menu)
     }
 
@@ -1137,11 +1198,7 @@ final class AppModel: ObservableObject {
     func cancelCalibration() {
         cancelCollecting()
         if let c = calibration {
-            fitted = (c.head, c.screen)
-            modelCheck = (c.headMissPt, c.screenMissPt)
-            grip = (c.reference, c.distanceM)
-            report = c.report
-            play(c.model)
+            adopt(c)
             if let s = stash {
                 adapter = s.adapter
                 logger = s.logger
@@ -1243,10 +1300,12 @@ final class AppModel: ObservableObject {
         }
         // The session's calibration from now on, for every mode.
         if let m = model, let r = report {
-            calibration = SessionCalibration(model: m, shadow: shadowModel, head: fitted.head, screen: fitted.screen,
-                                             headMissPt: modelCheck.headMissPt, screenMissPt: modelCheck.screenMissPt,
-                                             report: r, reference: grip.reference, distanceM: grip.distanceM,
-                                             childID: clinic.playingID, madeAt: Date())
+            let c = SessionCalibration(model: m, shadow: shadowModel, head: fitted.head, screen: fitted.screen,
+                                       headMissPt: modelCheck.headMissPt, screenMissPt: modelCheck.screenMissPt,
+                                       report: r, reference: grip.reference, distanceM: grip.distanceM,
+                                       childID: clinic.playingID, madeAt: Date())
+            calibration = c
+            keepCalibration(c)
         }
         stash = nil
         route = .result
