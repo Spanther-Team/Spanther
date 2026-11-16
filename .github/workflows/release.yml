@@ -1,0 +1,124 @@
+# Signs a Release build of SpantherGaze and uploads it to App Store Connect, where it shows up in
+# TestFlight after Apple's processing (15 to 30 minutes). Sending it for review stays a step in
+# App Store Connect.
+#
+# Run it by hand: Actions > App Store release > Run workflow, with the version (1.0.2, higher than the
+# last version sent to the App Store) and, if needed, a build number.
+#
+# Signing is automatic with an App Store Connect API key (role Admin), so no certificate or profile
+# lives in the repository. Repository secrets it needs:
+#   ASC_KEY_ID      the key's ID (Users and Access > Integrations > App Store Connect API)
+#   ASC_ISSUER_ID   the Issuer ID shown above the key list
+#   ASC_KEY_P8      the full text of the AuthKey_<id>.p8 file, BEGIN and END lines included
+#   APPLE_TEAM_ID   the 10-character Team ID of the team that owns com.spanther.SpantherGaze
+name: App Store release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the App Store (e.g. 1.0.2)
+        required: true
+      build:
+        description: Build number (empty = 100 + the run number of this workflow)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appstore-release
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+      BUILD_INPUT: ${{ inputs.build }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the inputs and secrets
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -e
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || { echo "::error::Version '$VERSION' is not like 1.0.2"; exit 1; }
+          BUILD="$BUILD_INPUT"
+          [ -n "$BUILD" ] || BUILD=$((100 + GITHUB_RUN_NUMBER))
+          echo "$BUILD" | grep -Eq '^[0-9]+$' || { echo "::error::Build '$BUILD' is not a number"; exit 1; }
+          for name in TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            [ -n "${!name}" ] || { echo "::error::Secret for $name is not set"; exit 1; }
+          done
+          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          grep -q 'BEGIN PRIVATE KEY' "$KEY" || { echo "::error::ASC_KEY_P8 does not look like a .p8 key"; exit 1; }
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "Releasing $VERSION ($BUILD)"
+
+      - name: Xcode version and schemes
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project SpantherGaze/SpantherGaze.xcodeproj
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project SpantherGaze/SpantherGaze.xcodeproj \
+            -scheme SpantherGaze \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/SpantherGaze.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            2>&1 | tee "$RUNNER_TEMP/archive.log" || {
+              bash .github/scripts/annotate-errors.sh "$RUNNER_TEMP/archive.log" "Archive"; exit 1; }
+          APP="$RUNNER_TEMP/SpantherGaze.xcarchive/Products/Applications/SpantherGaze.app"
+          echo "Version in the archive: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist"))"
+
+      - name: Upload to App Store Connect
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/SpantherGaze.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee "$RUNNER_TEMP/export.log"
+          echo "### Uploaded $VERSION ($BUILD) to App Store Connect" >> "$GITHUB_STEP_SUMMARY"
+          echo "It appears in TestFlight once Apple has processed it." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
