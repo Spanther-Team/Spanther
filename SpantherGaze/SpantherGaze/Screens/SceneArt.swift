@@ -11,14 +11,20 @@ import UIKit
 /// Drawing space: a bitmap context with its origin at the centre (unless said otherwise), points, y up, the same as
 /// Feel's stone-local frame and SpriteKit's.
 enum SceneArt {
-    // The stone tones (architecture proposal, "Palette"): warm stone lit, warm stone, warm stone in shade, deep stone
-    // for the facet seams and muted gold for the amber inlay. The ink line is the atlas look's ink.
-    static let stoneLit = rgb(0xB6A691)
-    static let stoneMid = rgb(0x9C8A74)
-    static let stoneShade = rgb(0x776858)
-    static let deepStone = rgb(0x5E5246)
-    static let mutedGold = rgb(0xC9A24E)
-    static let parchment = rgb(0xF1E8D4)
+    // The stone tones of the sunlit look: sandstone in full sun, sandstone, sandstone in shade, deep stone for the
+    // facet seams, a sky-blue gem for the inlay and gold for the motes. The ink line is the look's deep ink.
+    static let stoneLit = rgb(0xF4D493)
+    static let stoneMid = rgb(0xE3AE5E)
+    static let stoneShade = rgb(0xB57B3C)
+    static let deepStone = rgb(0x7E5428)
+    static let inlay = rgb(0x388EE8)
+    static let mutedGold = rgb(0xE8A838)
+    static let parchment = rgb(0xFBF4E2)
+    // The far hill and its grass.
+    static let grassLit = rgb(0x8FC688)
+    static let grassMid = rgb(0x47A851)
+    static let grassShade = rgb(0x2F8A3E)
+    static let energy = rgb(0xFF8A1E)
     static var ink: CGColor { Atlas.UI.ink.cgColor }
     static var vermilion: CGColor { Atlas.UI.vermilion.cgColor }
     /// The outline round a stone (pt).
@@ -90,10 +96,15 @@ enum SceneArt {
             let c = lit.polygon.centroid
             let inner = ConvexPolygon(vertices: lit.polygon.vertices.map { c + ($0 - c) * 0.45 })
             ctx.addPath(path(inner))
-            ctx.setFillColor(mutedGold)
+            ctx.setFillColor(inlay)
+            ctx.fillPath()
+            // A flat glint on the gem, the cel way.
+            let glint = ConvexPolygon(vertices: inner.vertices.map { c + ($0 - c) * 0.35 + SIMD2<Double>(-1.5, 1.5) })
+            ctx.addPath(path(glint))
+            ctx.setFillColor(rgb(0xFFFFFF, alpha: 0.55))
             ctx.fillPath()
         }
-        ctx.setStrokeColor(rgb(0x5E5246, alpha: 0.55))
+        ctx.setStrokeColor(rgb(0x7E5428, alpha: 0.5))
         ctx.setLineWidth(0.6)
         for facet in stone.facets {
             ctx.addPath(path(facet.polygon))
@@ -166,24 +177,31 @@ enum SceneArt {
     static func ring(radius: CGFloat, ticks: Bool, scale: CGFloat) -> SKTexture? {
         let side = radius * 2 + 16
         guard let ctx = context(size: CGSize(width: side, height: side), scale: scale) else { return nil }
-        ctx.setStrokeColor(ink.copy(alpha: 0.75) ?? ink)
-        ctx.setLineWidth(1.4)
-        ctx.addEllipse(in: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2))
+        // An astrolabe ring the cel way: an ink band with the amber energy laid in it.
+        let circle = CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)
+        ctx.setStrokeColor(ink)
+        ctx.setLineWidth(4.4)
+        ctx.addEllipse(in: circle)
+        ctx.strokePath()
+        ctx.setStrokeColor(energy)
+        ctx.setLineWidth(2.0)
+        ctx.addEllipse(in: circle)
         ctx.strokePath()
         if ticks {
-            ctx.setStrokeColor(ink.copy(alpha: 0.4) ?? ink)
-            ctx.setLineWidth(0.8)
+            ctx.setStrokeColor(ink)
+            ctx.setLineWidth(1.1)
             for i in 0..<24 where i % 6 != 0 {
                 let a = CGFloat(i) / 24 * 2 * .pi
-                ctx.move(to: CGPoint(x: cos(a) * (radius - 2.5), y: sin(a) * (radius - 2.5)))
-                ctx.addLine(to: CGPoint(x: cos(a) * radius, y: sin(a) * radius))
+                ctx.move(to: CGPoint(x: cos(a) * (radius + 2), y: sin(a) * (radius + 2)))
+                ctx.addLine(to: CGPoint(x: cos(a) * (radius + 5), y: sin(a) * (radius + 5)))
             }
             ctx.strokePath()
         }
+        // The index: a short ink bar at 12 o'clock. The three bars line up when the lock is complete.
         ctx.setStrokeColor(ink)
-        ctx.setLineWidth(2.4)
+        ctx.setLineWidth(3)
         ctx.move(to: CGPoint(x: 0, y: radius - 4))
-        ctx.addLine(to: CGPoint(x: 0, y: radius + 6))
+        ctx.addLine(to: CGPoint(x: 0, y: radius + 7))
         ctx.strokePath()
         return texture(ctx)
     }
@@ -297,26 +315,29 @@ enum SceneArt {
         cap.addLine(to: CGPoint(x: Double(width) + 20, y: -20))
         cap.addLine(to: CGPoint(x: -20, y: -20))
         cap.closeSubpath()
+        // A sunlit hill: emerald, a lit band along the crest, a band of shade lower down, all flat.
         ctx.addPath(cap)
-        ctx.setFillColor(Atlas.UI.paperShade.cgColor)
+        ctx.setFillColor(grassMid)
         ctx.fillPath()
-        for (depth, alpha) in [(14.0, 0.22), (32.0, 0.14)] {
-            ctx.setStrokeColor(ink.copy(alpha: CGFloat(alpha)) ?? ink)
-            ctx.setLineWidth(0.8)
+        for (depth, colour) in [(0.0, grassLit), (34.0, grassShade)] {
+            let band = CGMutablePath()
             for i in 0...steps {
                 let p = CGPoint(x: xAt(i), y: surfaceY(xAt(i)) - depth)
-                if i == 0 { ctx.move(to: p) } else { ctx.addLine(to: p) }
+                if i == 0 { band.move(to: p) } else { band.addLine(to: p) }
             }
-            ctx.strokePath()
+            for i in stride(from: steps, through: 0, by: -1) {
+                band.addLine(to: CGPoint(x: xAt(i), y: surfaceY(xAt(i)) - depth - (depth == 0 ? 9 : 400)))
+            }
+            band.closeSubpath()
+            ctx.saveGState()
+            ctx.addPath(cap)
+            ctx.clip()
+            ctx.addPath(band)
+            ctx.setFillColor(colour)
+            ctx.fillPath()
+            ctx.restoreGState()
         }
-        ctx.setStrokeColor(ink.copy(alpha: 0.3) ?? ink)
-        for i in 0..<14 {
-            let x = Double(width) * (Double(i) + 0.5) / 14
-            ctx.move(to: CGPoint(x: x, y: surfaceY(x) - 3))
-            ctx.addLine(to: CGPoint(x: x, y: surfaceY(x) - 10))
-        }
-        ctx.strokePath()
-        let land = CGColor(srgbRed: 0.235, green: 0.478, blue: 0.420, alpha: 0.28)
+        let land = grassShade.copy(alpha: 0.55) ?? grassShade
         for i in 0..<7 {
             let x = Double(width) * (Double(i) + 0.5) / 7
             let dx = x - centreX
@@ -334,9 +355,70 @@ enum SceneArt {
             ctx.restoreGState()
         }
         ctx.addPath(cap)
-        ctx.setStrokeColor(ink.copy(alpha: 0.75) ?? ink)
-        ctx.setLineWidth(1.5)
+        ctx.setStrokeColor(ink)
+        ctx.setLineWidth(inkLine)
         ctx.strokePath()
         return texture(ctx)
+    }
+
+    /// A strip of grass `width` pt long and `height` pt high, origin at its bottom left, y up, with 6 pt of clear
+    /// room on each side for the wind to move the blades into: tufts of two to four blades, lit and mid emerald,
+    /// each with an ink line along its two sides (the base is left open, so the blades grow out of the hill).
+    static func grass(width: CGFloat, height: CGFloat, seed: UInt64, scale: CGFloat) -> SKTexture? {
+        let pad: CGFloat = 6
+        guard let ctx = context(size: CGSize(width: width + 2 * pad, height: height), scale: scale, centred: false) else {
+            return nil
+        }
+        ctx.translateBy(x: pad, y: 0)
+        var state = seed | 1
+        func next() -> CGFloat {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return CGFloat((state >> 33) % 10_000) / 10_000
+        }
+        ctx.setLineWidth(1.1)
+        ctx.setStrokeColor(ink)
+        var x: CGFloat = 3
+        while x < width - 3 {
+            let blades = 2 + Int(next() * 2.99)
+            for b in 0..<blades {
+                let bx = x + CGFloat(b) * 3.2 - 3
+                let h = (height - 2) * (0.45 + 0.55 * next())
+                let lean = (next() - 0.5) * 9
+                let w = 2 + next() * 1.4
+                let tip = CGPoint(x: bx + lean, y: h)
+                let left = CGPoint(x: bx - w, y: 0), right = CGPoint(x: bx + w, y: 0)
+                let c1 = CGPoint(x: bx - w * 0.2 + lean * 0.2, y: h * 0.6)
+                let c2 = CGPoint(x: bx + w * 0.5 + lean * 0.4, y: h * 0.5)
+                let blade = CGMutablePath()
+                blade.move(to: left)
+                blade.addQuadCurve(to: tip, control: c1)
+                blade.addQuadCurve(to: right, control: c2)
+                blade.closeSubpath()
+                ctx.addPath(blade)
+                ctx.setFillColor(b % 2 == 0 ? grassLit : grassMid)
+                ctx.fillPath()
+                let sides = CGMutablePath()
+                sides.move(to: left)
+                sides.addQuadCurve(to: tip, control: c1)
+                sides.addQuadCurve(to: right, control: c2)
+                ctx.addPath(sides)
+                ctx.strokePath()
+            }
+            x += 9 + next() * 8
+        }
+        return texture(ctx)
+    }
+
+    /// The sky behind the play, baked small and stretched: cream along the bottom half, clearing to pale sky blue at
+    /// the top. 8 × 64 pt at 1 px/pt; the gradient is smooth, so stretching it costs nothing.
+    static func sky() -> SKTexture? {
+        guard let ctx = context(size: CGSize(width: 8, height: 64), scale: 1, centred: false),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let gradient = CGGradient(colorsSpace: space, colors: [parchment, parchment, rgb(0xAFD2F6)] as CFArray,
+                                        locations: [0, 0.42, 1]) else { return nil }
+        ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: 64), options: [])
+        let t = texture(ctx)
+        t?.filteringMode = .linear
+        return t
     }
 }

@@ -12,7 +12,7 @@ final class StoneArt {
 
     init(scale: CGFloat) {
         self.scale = scale
-        lamp = SceneArt.glow(Atlas.UI.vermilion.cgColor, alpha: 0.22, scale: scale)
+        lamp = SceneArt.glow(SceneArt.energy, alpha: 0.3, scale: scale)
         dust = SceneArt.glow(SceneArt.stoneMid, alpha: 0.6, scale: scale)
         mote = SceneArt.mote(scale: scale)
     }
@@ -34,8 +34,8 @@ final class StoneArt {
     /// the attribute `a_progress`, so all overlays share one compiled program.
     static let crackShader: SKShader = {
         let source = FeelShaders.crackReveal.replacingOccurrences(of: "u_progress", with: "a_progress")
-        // The atlas look's ink at 90%, premultiplied.
-        let ink = SIMD4<Float>(0.114 * 0.9, 0.141 * 0.9, 0.220 * 0.9, 0.9)
+        // The look's deep ink at 90%, premultiplied.
+        let ink = SIMD4<Float>(0.114 * 0.9, 0.102 * 0.9, 0.090 * 0.9, 0.9)
         let shader = SKShader(source: source, uniforms: [SKUniform(name: "u_ink", vectorFloat4: ink)])
         shader.attributes = [SKAttribute(name: "a_progress", type: .float)]
         return shader
@@ -118,10 +118,18 @@ final class StoneNode: SKNode {
     private var overlay: SKSpriteNode?
     private var lean = DampedSpring(frequency: 5, dampingRatio: 0.6)
     private var ringsShown: CGFloat = 0
+    /// Which rings have snapped home in this hold.
+    private var ringLocked = [false, false, false]
     private var starvedShown = false
     /// The shards and the impact point (stone-local pt), once the background bake is done.
     private(set) var prefracture: Prefracture?
     private var prefractureAsked = false
+
+    /// Ease-out with a 10% overshoot: the ring runs past the mark and settles back, a snap rather than a glide.
+    static func snapEase(_ u: CGFloat) -> CGFloat {
+        let v = u - 1
+        return 1 + 2.70158 * v * v * v + 1.70158 * v * v
+    }
 
     /// How far each ring starts turned away from the lock (rad).
     private static let turns: [CGFloat] = [1.35, -2.25, 2.95]
@@ -181,10 +189,23 @@ final class StoneNode: SKNode {
         // The rings show while the stone is looked at or charged, and turn into alignment as the hold fills.
         let want: CGFloat = (a.isTargeted || t > 0) ? 1 : 0
         ringsShown += (want - ringsShown) * min(1, CGFloat(dt) * 10)
-        let eased = 1 - (1 - t) * (1 - t)
+        // Each ring turns into place over its own third of the hold, the outer one first, and snaps home with a small
+        // overshoot and a kick in size: the lock assembles ring by ring, and the three index bars meet at the end.
+        let n = CGFloat(rings.count)
         for (i, ring) in rings.enumerated() {
             ring.alpha = ringsShown
-            ring.zRotation = Self.turns[i % Self.turns.count] * (1 - eased)
+            let order = n - 1 - CGFloat(i)
+            let u = max(0, min(1, (t - order / n) * n))
+            ring.zRotation = Self.turns[i % Self.turns.count] * (1 - Self.snapEase(u))
+            guard i < ringLocked.count else { continue }
+            let locked = u >= 1
+            if locked != ringLocked[i] {
+                ringLocked[i] = locked
+                if locked {
+                    ring.removeAction(forKey: "snap")
+                    ring.run(.sequence([.scale(to: 1.16, duration: 0.05), .scale(to: 1, duration: 0.14)]), withKey: "snap")
+                }
+            }
         }
         // Looked at without the energy to pay for it: the rings and the light turn vermilion ("reload first").
         if a.isStarved != starvedShown {
