@@ -113,10 +113,12 @@ final class AppModel: ObservableObject {
 
     /// The scale of every target and hit zone now: balance.json's with «Мелкие цели», 1 without.
     var targetScale: Double { smallTargets ? balance.smallTargetScale : 1 }
-    /// With small targets no hit zone gets smaller than this (screen pt): 1.25 times what the calibration missed
-    /// by on its check screen. 0 by finger and with regular targets.
+    /// By eye no meteor's or star's hit zone gets smaller than this (screen pt), with regular and small targets: what
+    /// the calibration missed by on its check screen plus 1.5 times the spread of the looks there
+    /// (`BalanceConfig.zoneFloor`). 0 by finger.
     var zoneFloorPt: Double {
-        balance.zoneFloor(measuredErrorPt: mode == .eyes ? report?.meanErrorPt : nil, scale: targetScale)
+        guard mode == .eyes, let r = report else { return 0 }
+        return balance.zoneFloor(errorPt: r.meanErrorPt, jitterPt: r.jitterPt)
     }
 
     /// The music plays while the meteor game is on screen, in front, not paused and not muted.

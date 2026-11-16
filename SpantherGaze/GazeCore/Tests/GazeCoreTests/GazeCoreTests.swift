@@ -391,7 +391,7 @@ final class GameModelTests: XCTestCase {
         for _ in 0..<200 { XCTAssertLessThan(m.spawn().position.y, 0) }
     }
 
-    /// Left alone, a meteor reaches Earth after its class's travel time (level 1: S takes 6 s).
+    /// Left alone, a meteor reaches Earth after its travel time (6 s here).
     func testUnwatchedMeteorHitsEarthAfterItsTravelTime() throws {
         for edge in [GameModel.Edge.top, .left, .right] {
             let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 30, seed: 23)
@@ -699,7 +699,10 @@ final class EnergyTests: XCTestCase {
 
     /// A bot with perfect gaze that needs 1.5 s (three blinks) to reload after running dry should still clear
     /// all 10 levels at the 80% advance ratio. Guards the energy numbers in balance.json against making the
-    /// game unwinnable. It reloads about twice a level at the start and about five times by level 10.
+    /// game unwinnable. It reloads about twice a level at the start and about five times by level 10. It looks at
+    /// the lowest meteor it can burn and leaves the ones still in their bubble (`Asteroid.isShielded`) for later:
+    /// a bot that stares at a bubble while another meteor falls ran out of shields on levels 8 to 10 in 5 of 8
+    /// seeds; this one in none.
     func testAllLevelsStayWinnableWithRealisticReloads() throws {
         for seed in [1, 2] as [UInt64] {
             let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 45, seed: seed)
@@ -713,7 +716,9 @@ final class EnergyTests: XCTestCase {
                     if drySince == nil { drySince = t }
                     if t - (drySince ?? t) >= 1.5 { if m.reload() { count += 1 }; drySince = nil }
                 } else { drySince = nil }
-                let target = m.asteroids.filter { $0.position.y > 0 }.max { $0.position.y < $1.position.y }
+                let lowest = { (a: Asteroid, b: Asteroid) in a.position.y < b.position.y }
+                let target = m.asteroids.filter { $0.position.y > 0 && !$0.isShielded }.max(by: lowest)
+                    ?? m.asteroids.filter { $0.position.y > 0 }.max(by: lowest)
                 for e in m.update(dt: 1.0 / 60, gaze: target.map { .point($0.position) } ?? .notLooking) {
                     if case let .levelEnded(level, ratio, _) = e { cleared[level] = ratio; reloads.append(count); count = 0 }
                     if case .shieldsDepleted = e { XCTFail("seed \(seed): shields ran out on level \(m.level)") }

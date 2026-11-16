@@ -206,6 +206,43 @@ enum SceneArt {
         return texture(ctx)
     }
 
+    /// The bubble a new stone flies in under while it cannot be burned (`Asteroid.isShielded`), `radius` pt round: a
+    /// sky-blue film, clear in the middle and bluer toward the rim as a soap bubble looks, an ink rim with the gem's
+    /// blue laid in it (the target rings are amber: this one is cool, and it does not turn), and a parchment
+    /// highlight at the upper left that stays there while the stone turns inside.
+    static func bubble(radius r: CGFloat, scale: CGFloat) -> SKTexture? {
+        let side = r * 2 + 8
+        guard let ctx = context(size: CGSize(width: side, height: side), scale: scale) else { return nil }
+        let circle = CGRect(x: -r, y: -r, width: r * 2, height: r * 2)
+        if let space = CGColorSpace(name: CGColorSpace.sRGB),
+           let film = CGGradient(colorsSpace: space, colors: [inlay.copy(alpha: 0.05) ?? inlay, inlay.copy(alpha: 0.14) ?? inlay,
+                                                              inlay.copy(alpha: 0.36) ?? inlay] as CFArray,
+                                 locations: [0, 0.68, 1]) {
+            ctx.saveGState()
+            ctx.addEllipse(in: circle)
+            ctx.clip()
+            ctx.drawRadialGradient(film, startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: r, options: [])
+            ctx.restoreGState()
+        }
+        ctx.setStrokeColor(ink.copy(alpha: 0.8) ?? ink)
+        ctx.setLineWidth(3.2)
+        ctx.addEllipse(in: circle)
+        ctx.strokePath()
+        ctx.setStrokeColor(inlay)
+        ctx.setLineWidth(1.6)
+        ctx.addEllipse(in: circle)
+        ctx.strokePath()
+        // The highlight (y up): an arc at the upper left and a drop just past its end.
+        ctx.setStrokeColor(parchment)
+        ctx.setLineWidth(max(2, r * 0.08))
+        ctx.addArc(center: .zero, radius: r * 0.74, startAngle: .pi * 0.56, endAngle: .pi * 0.84, clockwise: false)
+        ctx.strokePath()
+        let a = CGFloat.pi * 0.93, d = max(1.5, r * 0.045)
+        ctx.setFillColor(parchment)
+        ctx.fillEllipse(in: CGRect(x: cos(a) * r * 0.74 - d, y: sin(a) * r * 0.74 - d, width: d * 2, height: d * 2))
+        return texture(ctx)
+    }
+
     /// A soft round light: `color` in the middle fading to nothing at the edge. Drawn at 64 pt and scaled.
     static func glow(_ color: CGColor, alpha: CGFloat, scale: CGFloat) -> SKTexture? {
         let side: CGFloat = 64

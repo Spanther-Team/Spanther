@@ -23,6 +23,13 @@ enum Loc {
         }
     }
 
+    /// A decimal number on screen: 1,5 in Russian and Kazakh, 1.5 in English. The session CSVs keep the comma
+    /// (`SessionHistory.number`).
+    static func number(_ v: Double?, _ digits: Int) -> String {
+        let s = SessionHistory.number(v, digits)
+        return language == .en ? s.replacingOccurrences(of: ",", with: ".") : s
+    }
+
     static let table: Localizer = {
         guard let url = Bundle.main.url(forResource: "strings", withExtension: "json"),
               let data = try? Data(contentsOf: url), let t = try? Localizer(json: data) else {

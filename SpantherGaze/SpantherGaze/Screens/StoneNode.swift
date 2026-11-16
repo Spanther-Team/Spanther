@@ -9,6 +9,7 @@ final class StoneArt {
     let dust: SKTexture?
     let mote: SKTexture?
     private var ringCache: [Int: [(texture: SKTexture, radius: CGFloat)]] = [:]
+    private var bubbleCache: [Int: (texture: SKTexture, radius: CGFloat)] = [:]
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -28,6 +29,17 @@ final class StoneArt {
         }
         ringCache[key] = made
         return made
+    }
+
+    /// The bubble round a stone of `radius` pt at target scale `k` while it cannot be burned: radius + 9 × k, inside
+    /// the first target ring.
+    func bubble(radius: CGFloat, k: CGFloat) -> (texture: SKTexture, radius: CGFloat)? {
+        let key = Int((radius * 2).rounded())
+        if let cached = bubbleCache[key] { return cached }
+        let r = radius + 9 * k
+        guard let t = SceneArt.bubble(radius: r, scale: scale) else { return nil }
+        bubbleCache[key] = (t, r)
+        return (t, r)
     }
 
     /// One crack shader for every overlay (FeelShaders.crackReveal): the reveal reads each overlay's own progress from
@@ -108,7 +120,8 @@ final class StoneFactory {
 /// while it is looked at; three engraved rings that turn into alignment over the hold (alignment is the lock; there
 /// is still no cursor); and, from the hold's start, a crack overlay whose shader reveals the cracks as far as the hold
 /// has come, healing when the gaze leaves. The cracks run along the shards it will burst into, which are cut off the
-/// main thread when the hold starts.
+/// main thread when the hold starts. A new stone flies in inside a bubble, a little see-through, while it cannot be
+/// burned yet: a look makes the bubble wobble, and it pops when the stone has come far enough in.
 final class StoneNode: SKNode {
     let baked: SceneArt.BakedStone
     let radius: CGFloat
@@ -124,6 +137,11 @@ final class StoneNode: SKNode {
     /// The shards and the impact point (stone-local pt), once the background bake is done.
     private(set) var prefracture: Prefracture?
     private var prefractureAsked = false
+    private var bubble: SKSpriteNode?
+    /// The bubble's wobble while it is looked at: phase (rad) and depth (0...1).
+    private var wobble: (phase: CGFloat, depth: CGFloat) = (0, 0)
+    /// The stone's look inside the bubble: a little see-through, so it reads as not there yet.
+    private static let shieldedAlpha: CGFloat = 0.62
 
     /// Ease-out with a 10% overshoot: the ring runs past the mark and settles back, a snap rather than a glide.
     static func snapEase(_ u: CGFloat) -> CGFloat {
@@ -141,8 +159,8 @@ final class StoneNode: SKNode {
         let shards: [SceneArt.BakedShard]
     }
 
-    /// `k`: «Мелкие цели», the rings and the lamp shrink with the stone.
-    init(baked: SceneArt.BakedStone, art: StoneArt, k: CGFloat) {
+    /// `k`: «Мелкие цели», the rings and the lamp shrink with the stone. `shielded`: it comes in inside its bubble.
+    init(baked: SceneArt.BakedStone, art: StoneArt, k: CGFloat, shielded: Bool = false) {
         self.baked = baked
         radius = CGFloat(baked.stone.radius)
         body = SKSpriteNode(texture: baked.texture, size: CGSize(width: baked.side, height: baked.side))
@@ -165,6 +183,14 @@ final class StoneNode: SKNode {
         if let lamp { addChild(lamp) }
         addChild(body)
         rings.forEach { addChild($0) }
+        if shielded, let b = art.bubble(radius: CGFloat(baked.stone.radius), k: k) {
+            let s = SKSpriteNode(texture: b.texture, size: CGSize(width: b.radius * 2 + 8, height: b.radius * 2 + 8))
+            // Over the stone: the scene ignores sibling order, and the highlight and the film's rim belong in front.
+            s.zPosition = 1
+            addChild(s)
+            bubble = s
+            body.alpha = Self.shieldedAlpha
+        }
         zPosition = 10
     }
 
@@ -176,18 +202,21 @@ final class StoneNode: SKNode {
         position = p
         body.zRotation = CGFloat(a.rotation)
         let t = CGFloat(max(0, min(1, a.progress)))
+        syncBubble(a, dt: dt)
+        // Looked at and burnable: the lamp, the rings and the lean. A look at a stone in its bubble only wobbles it.
+        let engaged = a.isTargeted && !a.isShielded
         // The lean: up to 6% of the radius toward the gaze point while it rests on the stone.
         var target = SIMD2<Double>(0, 0)
-        if a.isTargeted, let g = gaze {
+        if engaged, let g = gaze {
             let d = SIMD2<Double>(Double(g.x - p.x), Double(g.y - p.y))
             let len = (d * d).sum().squareRoot()
             if len > 0.5 { target = d * (0.06 * min(len, Double(radius)) / len) }
         }
         lean.step(toward: target, dt: max(0, min(0.1, dt)))
         body.position = CGPoint(x: lean.position.x, y: lean.position.y)
-        lamp?.isHidden = !a.isTargeted
+        lamp?.isHidden = !engaged
         // The rings show while the stone is looked at or charged, and turn into alignment as the hold fills.
-        let want: CGFloat = (a.isTargeted || t > 0) ? 1 : 0
+        let want: CGFloat = (engaged || t > 0) ? 1 : 0
         ringsShown += (want - ringsShown) * min(1, CGFloat(dt) * 10)
         // Each ring turns into place over its own third of the hold, the outer one first, and snaps home with a small
         // overshoot and a kick in size: the lock assembles ring by ring, and the three index bars meet at the end.
@@ -217,6 +246,25 @@ final class StoneNode: SKNode {
         }
         if t > 0, !prefractureAsked, !a.isStarved { requestPrefracture(gaze: gaze, center: p, rotation: a.rotation) }
         overlay?.setValue(SKAttributeValue(float: Float(max(0, (t - 0.08) / 0.92))), forAttribute: "a_progress")
+    }
+
+    /// The bubble while the stone is shielded: a jelly wobble while it is looked at, easing out after; a pop, and the
+    /// stone solid again, the frame the shield is down.
+    private func syncBubble(_ a: Asteroid, dt: Double) {
+        guard let b = bubble else { return }
+        guard a.isShielded else {
+            bubble = nil
+            b.removeAllActions()
+            b.run(.sequence([.group([.scale(to: 1.25, duration: 0.13), .fadeOut(withDuration: 0.13)]), .removeFromParent()]))
+            body.run(.fadeAlpha(to: 1, duration: 0.12))
+            return
+        }
+        let step = CGFloat(max(0, min(0.1, dt)))
+        wobble.depth += ((a.isTargeted ? 1 : 0) - wobble.depth) * min(1, step * 8)
+        wobble.phase += step * 15
+        let w = 0.06 * wobble.depth * sin(wobble.phase)
+        b.xScale = 1 + w
+        b.yScale = 1 - w
     }
 
     private func requestPrefracture(gaze: CGPoint?, center p: CGPoint, rotation: Double) {

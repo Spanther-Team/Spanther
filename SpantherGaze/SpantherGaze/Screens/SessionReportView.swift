@@ -281,7 +281,7 @@ enum ReportText {
 
     static func percent(_ v: Double?) -> String { v.map { "\(Int(($0 * 100).rounded()))%" } ?? "–" }
 
-    static func seconds(_ v: Double?) -> String { v.map { SessionHistory.number($0, 1) + nb + L("с") } ?? "–" }
+    static func seconds(_ v: Double?) -> String { v.map { Loc.number($0, 1) + nb + L("с") } ?? "–" }
 
     static func duration(_ sec: Double) -> String {
         let total = Int(sec.rounded()), m = total / 60, s = total % 60
@@ -301,7 +301,7 @@ enum ReportText {
     }
 
     private static func calibration(_ s: SessionSummary) -> String? {
-        s.calibrationErrorCm.map { L("промах калибровки\u{00A0}{0}\u{00A0}см", SessionHistory.number($0, 1)) }
+        s.calibrationErrorCm.map { L("промах калибровки\u{00A0}{0}\u{00A0}см", Loc.number($0, 1)) }
     }
 
     /// The game, how it was played, for how long, with which targets, and (with `calibration`) the calibration
@@ -341,7 +341,7 @@ enum ReportText {
         let hold = Number(big: holdValue, small: holdSmall, label: holdLabel, rowLabel: holdLabel, rowValue: holdValue)
 
         var timingValue = dash
-        if let ms = s.timingDeviationMs { timingValue = SessionHistory.number(ms, 0) + nb + L("мс") }
+        if let ms = s.timingDeviationMs { timingValue = Loc.number(ms, 0) + nb + L("мс") }
         let timingSmall = s.game == .rhythm ? L("в среднем") : L("только в ритме")
         let timing = Number(big: timingValue, small: timingSmall, label: L("отклонение от ритма"),
                             rowLabel: L("отклонение от ритма"), rowValue: timingValue)
@@ -381,7 +381,7 @@ enum ReportText {
                        ? L("Удержание: метеориты, сожжённые одним взглядом, без срыва, из тех, на которые ребёнок посмотрел.")
                        : L("Удержание: метеориты, сожжённые одним касанием, без срыва, из тех, которых ребёнок коснулся."))
             if s.decoys != nil {
-                let dwell = SessionHistory.number(decoyDwellSec, 2) + nb + L("с")
+                let dwell = Loc.number(decoyDwellSec, 2) + nb + L("с")
                 out.append(s.byEye
                            ? L("Ошибка на красном: взгляд задержался на красном знаке дольше {0}.", dwell)
                            : L("Ошибка на красном: палец задержался на красном знаке дольше {0}.", dwell))
@@ -417,7 +417,7 @@ enum ReportText {
                 }
             }
             if let v = s.meanFirstLookSec { parts.append((s.byEye ? L("первый взгляд") : L("первое касание")) + nb + seconds(v)) }
-            if let v = s.slipsPerMeteor { parts.append(L("срывов на метеорит") + nb + SessionHistory.number(v, 1)) }
+            if let v = s.slipsPerMeteor { parts.append(L("срывов на метеорит") + nb + Loc.number(v, 1)) }
             if let l = s.maxLevel { parts.append(L("уровень") + nb + String(l)) }
         case .rhythm:
             parts.append(L("«{0}», {1}", L(s.track ?? ""), level(s)))
@@ -426,7 +426,7 @@ enum ReportText {
             if numbers {
                 if let hold { parts.append(hold) }
                 if let ms = s.timingDeviationMs {
-                    parts.append(L("отклонение от ритма") + nb + SessionHistory.number(ms, 0) + nb + L("мс"))
+                    parts.append(L("отклонение от ритма") + nb + Loc.number(ms, 0) + nb + L("мс"))
                 }
                 if s.winkLeft != nil || s.winkRight != nil {
                     parts.append(L("подмигивания: левый") + nb + percent(s.winkLeft) + L(", правый") + nb + percent(s.winkRight))
@@ -439,7 +439,7 @@ enum ReportText {
             if s.pursuitHorizontal != nil { parts.append(L("горизонталь") + nb + percent(s.pursuitHorizontal)) }
             if s.pursuitVertical != nil { parts.append(L("вертикаль") + nb + percent(s.pursuitVertical)) }
             if s.pursuitEight != nil { parts.append(L("восьмёрка") + nb + percent(s.pursuitEight)) }
-            if let cm = s.pursuitMeanCm { parts.append(L("до точки в среднем") + nb + SessionHistory.number(cm, 1) + nb + L("см")) }
+            if let cm = s.pursuitMeanCm { parts.append(L("до точки в среднем") + nb + Loc.number(cm, 1) + nb + L("см")) }
             if s.pursuitLostShare != nil {
                 parts.append((s.byEye ? L("без взгляда") : L("без касания")) + nb + percent(s.pursuitLostShare))
             }
@@ -463,7 +463,7 @@ enum ReportText {
     }
 
     private static func milliseconds(_ v: Double?) -> String {
-        v.map { SessionHistory.number($0, 0) + nb + L("мс") } ?? "–"
+        v.map { Loc.number($0, 0) + nb + L("мс") } ?? "–"
     }
 
     /// The first and the newest of the plays that compare (SessionHistory.progress), per game.
@@ -484,8 +484,8 @@ enum ReportText {
                                       first: seconds(a.meanFirstLookSec), last: seconds(b.meanFirstLookSec)))
             }
             if let x = a.slipsPerMeteor, let y = b.slipsPerMeteor {
-                rows.append(Trend.Row(label: L("срывов на метеорит"), first: SessionHistory.number(x, 1),
-                                      last: SessionHistory.number(y, 1)))
+                rows.append(Trend.Row(label: L("срывов на метеорит"), first: Loc.number(x, 1),
+                                      last: Loc.number(y, 1)))
             }
             let games = plural(m.count, L("игра"), L("игры"), L("игр")), how = b.byEye ? L("взглядом") : L("пальцем")
             let size = b.targetScale == nil ? "" : L(", мелкие цели")
@@ -508,8 +508,8 @@ enum ReportText {
         if let a = w.first, let b = w.last {
             var rows = [Trend.Row(label: L("удержание"), first: percent(a.holdShare), last: percent(b.holdShare))]
             if let x = a.pursuitMeanCm, let y = b.pursuitMeanCm {
-                rows.append(Trend.Row(label: L("до точки в среднем"), first: SessionHistory.number(x, 1) + nb + L("см"),
-                                      last: SessionHistory.number(y, 1) + nb + L("см")))
+                rows.append(Trend.Row(label: L("до точки в среднем"), first: Loc.number(x, 1) + nb + L("см"),
+                                      last: Loc.number(y, 1) + nb + L("см")))
             }
             let times = plural(w.count, L("раз"), L("раза"), L("раз")), how = b.byEye ? L("взглядом") : L("пальцем")
             out.append(Trend(title: L("Разминка {0}, {1} {2}", how, w.count, times), rows: rows))
