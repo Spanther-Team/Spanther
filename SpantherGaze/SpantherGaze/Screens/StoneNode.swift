@@ -185,6 +185,8 @@ final class StoneNode: SKNode {
         rings.forEach { addChild($0) }
         if shielded, let b = art.bubble(radius: CGFloat(baked.stone.radius), k: k) {
             let s = SKSpriteNode(texture: b.texture, size: CGSize(width: b.radius * 2 + 8, height: b.radius * 2 + 8))
+            // Over the stone: the scene ignores sibling order, and the highlight and the film's rim belong in front.
+            s.zPosition = 1
             addChild(s)
             bubble = s
             body.alpha = Self.shieldedAlpha
