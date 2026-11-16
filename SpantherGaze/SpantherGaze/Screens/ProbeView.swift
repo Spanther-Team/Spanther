@@ -138,6 +138,7 @@ private struct ProbeDone: View {
     @EnvironmentObject var app: AppModel
     @ObservedObject var session: ProbeSession
     @StateObject private var fx = StreakFX()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if session.phase == .done {
@@ -163,7 +164,12 @@ private struct ProbeDone: View {
 
     private var done: some View {
         VStack(spacing: 14) {
-            Text("Готово!").font(Atlas.display(30)).foregroundStyle(Atlas.ink)
+            HStack(spacing: 14) {
+                // The panther cub cheers too, in the gifts the child's plays have brought it.
+                PantherCub(gifts: ObservatoryStore.load(child: app.currentChildCode).gifts, reduceMotion: reduceMotion)
+                    .frame(width: 64, height: 64)
+                Text("Готово!").font(Atlas.display(30)).foregroundStyle(Atlas.ink)
+            }
             if app.clinic.role == .clinician, let outcome = app.probeOutcome {
                 SessionCard(session: outcome.session, issues: outcome.issues)
             } else {

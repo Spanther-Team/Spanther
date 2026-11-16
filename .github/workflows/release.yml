@@ -3,7 +3,9 @@
 # App Store Connect.
 #
 # Run it by hand: Actions > App Store release > Run workflow, with the version (1.0.2, higher than the
-# last version sent to the App Store) and, if needed, a build number.
+# last version sent to the App Store) and, if needed, a build number. With "upload" off it only exports the
+# signed .ipa as the run's artifact (SpantherGaze-appstore-<version>-<build>), for someone to upload it
+# with Transporter on a Mac.
 #
 # Signing is automatic with an App Store Connect API key (role Admin), so no certificate or profile
 # lives in the repository. Repository secrets it needs:
@@ -23,6 +25,11 @@ on:
         description: Build number (empty = 100 + the run number of this workflow)
         required: false
         default: ""
+      upload:
+        description: Upload to App Store Connect (off = only export the signed .ipa as an artifact)
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -38,6 +45,7 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       BUILD_INPUT: ${{ inputs.build }}
+      DESTINATION: ${{ inputs.upload && 'upload' || 'export' }}
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -90,7 +98,7 @@ jobs:
           APP="$RUNNER_TEMP/SpantherGaze.xcarchive/Products/Applications/SpantherGaze.app"
           echo "Version in the archive: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist"))"
 
-      - name: Upload to App Store Connect
+      - name: Upload to App Store Connect, or export the .ipa
         run: |
           set -o pipefail
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
@@ -99,7 +107,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>${DESTINATION}</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
             <key>uploadSymbols</key><true/>
@@ -116,8 +124,24 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             2>&1 | tee "$RUNNER_TEMP/export.log"
-          echo "### Uploaded $VERSION ($BUILD) to App Store Connect" >> "$GITHUB_STEP_SUMMARY"
-          echo "It appears in TestFlight once Apple has processed it." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DESTINATION" = upload ]; then
+            echo "### Uploaded $VERSION ($BUILD) to App Store Connect" >> "$GITHUB_STEP_SUMMARY"
+            echo "It appears in TestFlight once Apple has processed it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            ls -l "$RUNNER_TEMP/export"
+            test -n "$(ls "$RUNNER_TEMP"/export/*.ipa 2>/dev/null)" || { echo "::error::No .ipa was exported"; exit 1; }
+            echo "### Exported $VERSION ($BUILD), signed for the App Store" >> "$GITHUB_STEP_SUMMARY"
+            echo "Download the artifact and upload the .ipa with Transporter." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the exported .ipa
+        if: ${{ !inputs.upload }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpantherGaze-appstore-${{ inputs.version }}-${{ env.BUILD }}
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Remove the key
         if: always()

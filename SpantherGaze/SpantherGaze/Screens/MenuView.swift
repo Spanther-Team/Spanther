@@ -8,6 +8,9 @@ struct MenuView: View {
     @EnvironmentObject var app: AppModel
     /// The report sheet: the summary of the play that just ended, or the child's history.
     @State private var report: ReportPage?
+    /// The victory screen of the play that just ended, and the report that follows it.
+    @State private var victory: VictoryShown?
+    @State private var reportAfterVictory: SessionSummary?
     @State private var showSettings = false
     /// The wink test was asked for in the settings: it opens once their sheet has closed.
     @State private var winkTestAsked = false
@@ -20,6 +23,13 @@ struct MenuView: View {
             ScrollView { content }
         }
         .sheet(item: $report) { page in ReportSheet(page: page).environmentObject(app) }
+        .fullScreenCover(item: $victory, onDismiss: {
+            guard let s = reportAfterVictory else { return }
+            reportAfterVictory = nil
+            report = .summary(s)
+        }) { v in
+            VictoryView(summary: v.summary, award: v.award) { victory = nil }
+        }
         .sheet(isPresented: $showSettings, onDismiss: {
             guard winkTestAsked else { return }
             winkTestAsked = false
@@ -45,7 +55,16 @@ struct MenuView: View {
     private func showLastSummary() {
         guard let s = app.lastSummary else { return }
         app.lastSummary = nil
-        report = .summary(s)
+        #if DEBUG
+        // The report shots with made-up plays go straight to the report.
+        if app.demoReport != nil {
+            report = .summary(s)
+            return
+        }
+        #endif
+        // After a play: its victory first, then its report.
+        reportAfterVictory = s
+        victory = VictoryShown(summary: s, award: app.victory(for: s))
     }
 
     private var content: some View {
@@ -513,4 +532,11 @@ struct SecondaryButton: ButtonStyle {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.dim.opacity(0.4)))
             .foregroundStyle(.white.opacity(configuration.isPressed ? 0.6 : 1))
     }
+}
+
+/// A victory screen to show: the play and what it won.
+struct VictoryShown: Identifiable {
+    let summary: SessionSummary
+    let award: VictoryAward
+    var id: String { summary.id }
 }

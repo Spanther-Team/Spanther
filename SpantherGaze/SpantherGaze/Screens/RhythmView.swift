@@ -551,6 +551,9 @@ private struct RhythmResults: View {
     let session: RhythmSession
     /// The table of this play for the Share button (made when the results appear).
     @State private var exportURL: URL? = nil
+    /// The play's victory, shown over the results until «Дальше».
+    @State private var victory: VictoryAward?
+    @State private var victoryDone = false
 
     var body: some View {
         let j = session.judge
@@ -615,7 +618,20 @@ private struct RhythmResults: View {
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ZStack { SunlitBackdrop(); LivingBackground(growFrom: app.launchTime) }.ignoresSafeArea())
-        .onAppear { exportURL = app.rhythmSummary.flatMap { SessionStore.exportCSV(play: $0) } }
+        // The play's victory comes first, over the results; «Дальше» shows them.
+        .overlay {
+            if let s = app.rhythmSummary, let award = victory, !victoryDone {
+                VictoryView(summary: s, award: award) { withAnimation(Atlas.snap) { victoryDone = true } }
+                    .transition(AnyTransition.opacity)
+            }
+        }
+        .onAppear {
+            exportURL = app.rhythmSummary.flatMap { SessionStore.exportCSV(play: $0) }
+            if let s = app.rhythmSummary { victory = app.victory(for: s) }
+        }
+        .onChange(of: app.rhythmSummary?.id) { _ in
+            if victory == nil, let s = app.rhythmSummary { victory = app.victory(for: s) }
+        }
     }
 
     /// The four numbers of the report as a short list under the plate, in the order every summary has them.

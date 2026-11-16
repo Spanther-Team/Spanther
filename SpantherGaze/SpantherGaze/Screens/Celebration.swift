@@ -91,13 +91,15 @@ final class StreakFX: ObservableObject {
         }
     }
 
-    /// The end of a play that keeps no streak (the probe): fireworks at `points`, one after another, with the
-    /// chime and the haptics of a big milestone, and no banner.
-    func finale(at points: [CGPoint]) {
+    /// The end of a play (the probe's end screen, the victory screen): fireworks at `points`, 0.45 s apart from
+    /// `after` seconds on, with the chime and the haptics of a big milestone, and no banner.
+    func finale(at points: [CGPoint], after: Double = 0, tier: Int = 2) {
         onMain {
-            for (k, p) in points.enumerated() { self.burst(at: p, tier: 2, delay: 0.45 * Double(k)) }
-            if self.chimes { StreakChimes.shared.play(tier: 2) }
-            Haptics.shared.milestone(tier: 2)
+            for (k, p) in points.enumerated() { self.burst(at: p, tier: tier, delay: after + 0.45 * Double(k)) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+                if self.chimes { StreakChimes.shared.play(tier: tier) }
+                Haptics.shared.milestone(tier: tier)
+            }
         }
     }
 
