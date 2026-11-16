@@ -3,21 +3,40 @@ import SwiftUI
 @main
 struct SpantherGazeApp: App {
     @StateObject private var app = AppModel()
+    @StateObject private var updateGate = UpdateGate()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(app)
-                .environmentObject(app.status)
-                .statusBarHidden()
-                .persistentSystemOverlays(.hidden)
-                .onAppear {
-                    app.startTracking()
-                    UIApplication.shared.isIdleTimerDisabled = true
+            Group {
+                // While the App Store has a newer version, the app opens only the update screen.
+                if let version = updateGate.requiredVersion {
+                    UpdateRequiredView(version: version)
+                } else {
+                    RootView()
+                        .environmentObject(app)
+                        .environmentObject(app.status)
+                        .onAppear {
+                            app.startTracking()
+                            UIApplication.shared.isIdleTimerDisabled = true
+                        }
                 }
+            }
+            .environmentObject(updateGate)
+            .statusBarHidden()
+            .persistentSystemOverlays(.hidden)
+            .onAppear { updateGate.check() }
+            .onChange(of: updateGate.requiredVersion) { version in
+                // Locked mid-play: the camera and the music stop behind the update screen.
+                guard version != nil else { return }
+                app.scenePhaseChanged(active: false)
+                app.tracker.stop()
+            }
         }
-        .onChange(of: scenePhase) { phase in app.scenePhaseChanged(active: phase == .active) }
+        .onChange(of: scenePhase) { phase in
+            app.scenePhaseChanged(active: phase == .active && updateGate.requiredVersion == nil)
+            if phase == .active { updateGate.check() }
+        }
     }
 }
 
