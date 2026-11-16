@@ -148,8 +148,8 @@ struct MetricChart: View {
             .frame(height: 150)
         }
         .padding(10)
-        .background(Atlas.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Atlas.ink.opacity(0.1), lineWidth: 1))
+        // Charts stay calm: a flat cream plate in ink outline, no coloured slab behind.
+        .background(InkSlab(shape: CutPlate(cut: 12), fill: Atlas.paper, depth: 3))
     }
 
     private static func steps(_ a: Double, _ b: Double) -> [Double] {
@@ -177,7 +177,7 @@ struct CourseCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(ClinicText.name(m)).foregroundStyle(Atlas.inkSoft)
                     Spacer(minLength: 12)
-                    Text(line(m)).foregroundStyle(Atlas.ink).monospacedDigit()
+                    Text(line(m)).font(Atlas.metric(13)).foregroundStyle(Atlas.ink)
                 }
                 .font(.system(size: 13))
             }
@@ -215,7 +215,7 @@ struct ParentSummary: View {
                     Text(words).font(Atlas.body).foregroundStyle(Atlas.ink)
                     Text("в начале: \(ClinicText.parentValue(metric, CourseStats.mean(Array(values.prefix(3)))))"
                          + " · сейчас: \(ClinicText.parentValue(metric, CourseStats.mean(Array(values.suffix(3)))))")
-                        .font(Atlas.caption)
+                        .font(Atlas.metric(13, weight: .regular))
                         .foregroundStyle(Atlas.inkSoft)
                 }
             }

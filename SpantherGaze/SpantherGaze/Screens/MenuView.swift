@@ -75,9 +75,13 @@ struct MenuView: View {
                     .font(Atlas.wordmark(24))
                     .tracking(6)
                     .foregroundStyle(Atlas.ink)
+                // The tagline on an ink banner thrown on the slant.
                 Text("Игры, в которые играют взглядом")
-                    .font(Atlas.caption)
-                    .foregroundStyle(Atlas.inkSoft)
+                    .font(Atlas.caption.weight(.bold))
+                    .foregroundStyle(Atlas.cream)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Slant(lean: 6).fill(Atlas.ink))
             }
             // The name keeps its whole width; the sessions button takes what is left.
             .layoutPriority(1)
@@ -104,8 +108,7 @@ struct MenuView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Atlas.ink)
                     .frame(width: 44, height: 44)
-                    .background(Atlas.paper.opacity(0.88), in: Capsule())
-                    .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
+                    .atlasChip()
             }
             .accessibilityLabel("Кто играет")
             Button { showSettings = true } label: {
@@ -113,8 +116,7 @@ struct MenuView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Atlas.ink)
                     .frame(width: 44, height: 44)
-                    .background(Atlas.paper.opacity(0.88), in: Capsule())
-                    .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
+                    .atlasChip()
             }
             .accessibilityLabel("Настройки")
         }
@@ -135,8 +137,7 @@ struct MenuView: View {
                 .foregroundStyle(has ? Atlas.ink : Atlas.vermilion)
                 .padding(.horizontal, 12)
                 .frame(minWidth: 44, minHeight: 44)
-                .background(Atlas.paper.opacity(0.88), in: Capsule())
-                .overlay(Capsule().stroke(has ? Atlas.ink.opacity(0.14) : Atlas.vermilion.opacity(0.5), lineWidth: 1))
+                .atlasChip(border: has ? Atlas.ink : Atlas.vermilion)
                 .fixedSize()
             }
             .accessibilityLabel(has ? "Перекалибровать" : "Откалибровать")
@@ -154,15 +155,15 @@ struct MenuView: View {
             .foregroundStyle(Atlas.ink)
             .padding(.horizontal, 12)
             .frame(minWidth: 44, minHeight: 44)
-            .background(Atlas.paper.opacity(0.88), in: Capsule())
-            .overlay(Capsule().stroke(Atlas.ink.opacity(0.14), lineWidth: 1))
+            .atlasChip()
             .fixedSize()
         }
         .accessibilityLabel(code.isEmpty ? "Занятия" : "Занятия ребёнка \(code)")
     }
 
     /// One game: its small moving picture and name, what to do in a sentence or two, and its buttons at the bottom.
-    private func plate<Art: View, Actions: View>(_ title: String, _ text: String, @ViewBuilder art: () -> Art,
+    private func plate<Art: View, Actions: View>(_ title: String, _ text: String, accent: Color, order: Int,
+                                                 @ViewBuilder art: () -> Art,
                                                  @ViewBuilder actions: () -> Actions) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -181,7 +182,8 @@ struct MenuView: View {
             HStack(spacing: 8) { actions() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .atlasPlate(padding: 12)
+        .atlasPlate(padding: 12, accent: accent)
+        .kineticEntrance(order: order)
     }
 
     /// A button's words on one line; they shrink a little on a narrow plate instead of breaking.
@@ -202,6 +204,7 @@ struct MenuView: View {
               app.decoysOn
               ? "Держи взгляд на метеорите, пока он не сгорит. Красные знаки пропускай. Кончилась энергия? Моргни 3\u{00A0}раза."
               : "Держи взгляд на метеорите, пока он не сгорит. Кончилась энергия? Моргни 3\u{00A0}раза.",
+              accent: Atlas.gold, order: 1,
               art: { MeteorVignette() },
               actions: {
                   Button { app.playMeteorsByEye() } label: { buttonText("Играть глазами") }
@@ -216,6 +219,7 @@ struct MenuView: View {
 
     private var rhythmPlate: some View {
         plate("Ритм", "Смотри на звезду и подмигивай, когда стрелка дойдёт до метки.",
+              accent: Atlas.sky, order: 2,
               art: { NoteVignette() },
               actions: {
                   Button { app.openRhythm() } label: { buttonText("Выбрать трек") }
@@ -226,6 +230,7 @@ struct MenuView: View {
 
     private var pursuitPlate: some View {
         plate("Разминка", "Минута для глаз: следи за точкой, пока она плывёт по экрану.",
+              accent: Atlas.emerald, order: 3,
               art: { PursuitVignette() },
               actions: {
                   Button { app.openPursuit(byEye: true) } label: { buttonText("Начать") }
@@ -252,7 +257,7 @@ struct MenuView: View {
         HStack(spacing: 12) {
             Text("Изображение с камеры остаётся на телефоне.")
                 .font(Atlas.caption)
-                .foregroundStyle(Atlas.inkSoft)
+                .foregroundStyle(Atlas.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 8)
@@ -350,7 +355,7 @@ private struct SettingsSheet: View {
     private func setting(_ title: String, _ hint: String, _ isOn: Binding<Bool>, divider: Bool) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 16, design: .serif)).foregroundStyle(Atlas.ink)
+                Text(title).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Atlas.ink)
                 Text(hint).font(.system(size: 11)).foregroundStyle(Atlas.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }

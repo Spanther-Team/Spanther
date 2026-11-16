@@ -101,7 +101,7 @@ struct UpdateRequiredView: View {
 
     var body: some View {
         ZStack {
-            Atlas.paper.ignoresSafeArea()
+            SunlitBackdrop().ignoresSafeArea()
             VStack(spacing: 18) {
                 Text("SPANTHER")
                     .font(Atlas.wordmark(24))
@@ -117,13 +117,10 @@ struct UpdateRequiredView: View {
                 Button {
                     gate.openAppStore()
                 } label: {
-                    Text("Обновить в App Store")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Atlas.onAccent)
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
-                        .background(Capsule().fill(Atlas.vermilion))
+                    Text("Обновить в App Store").padding(.horizontal, 28)
                 }
+                .buttonStyle(AtlasPrimaryButton())
+                .fixedSize()
                 .padding(.top, 6)
             }
             .padding(32)

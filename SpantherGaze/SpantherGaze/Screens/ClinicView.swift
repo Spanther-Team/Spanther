@@ -85,9 +85,11 @@ private struct ClinicContent: View {
     private var tiles: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 12) {
-                ForEach(clinic.active) { r in
+                ForEach(Array(clinic.active.enumerated()), id: \.element.id) { k, r in
                     Button { app.pick(child: r.id) } label: { tile(r) }
                         .buttonStyle(.plain)
+                        .selectedPop(r.id == clinic.playingID)
+                        .kineticEntrance(order: k)
                         .accessibilityLabel("Играет \(r.child.tileName)")
                 }
                 if clinic.role == .clinician {
@@ -98,9 +100,9 @@ private struct ClinicContent: View {
                         }
                         .foregroundStyle(Atlas.ink)
                         .frame(maxWidth: .infinity, minHeight: 120)
-                        .background(Atlas.paper.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Atlas.ink.opacity(0.25),
-                                                                           style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+                        .background(CutPlate(cut: 14).fill(Atlas.paper.opacity(0.7)))
+                        .overlay(CutPlate(cut: 14).strokeBorder(Atlas.ink.opacity(0.6),
+                                                                style: StrokeStyle(lineWidth: Atlas.line, dash: [6, 4])))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Добавить ребёнка")
@@ -121,16 +123,16 @@ private struct ClinicContent: View {
         return VStack(spacing: 8) {
             Image(systemName: ClinicText.emblem(r.child.emblem))
                 .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(picked ? Atlas.vermilion : Atlas.ink)
-            Text(r.child.tileName).font(.system(size: 15, weight: .semibold)).foregroundStyle(Atlas.ink).lineLimit(1)
+                .foregroundStyle(Atlas.ink)
+            Text(r.child.tileName).font(.system(size: 15, weight: picked ? .heavy : .semibold, design: .rounded))
+                .foregroundStyle(Atlas.ink).lineLimit(1)
             if clinic.role != nil, r.child.nickname != nil {
                 Text(r.child.code).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 120)
-        .background(Atlas.paper.opacity(0.92), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(picked ? Atlas.vermilion : Atlas.ink.opacity(0.14),
-                                                           lineWidth: picked ? 2.5 : 1))
+        // The one who plays now stands on a gold plate, lifted higher than the others.
+        .background(InkSlab(shape: CutPlate(cut: 14), fill: picked ? Atlas.gold : Atlas.paper, depth: picked ? 6 : 4))
     }
 
     @ViewBuilder private var footer: some View {
@@ -402,7 +404,7 @@ private struct ChildDetailSheet: View {
                     }
                     Spacer()
                     Text(s.probe == nil ? "без пробы" : (s.onChart ? "на графике" : "вне графика"))
-                        .foregroundStyle(s.onChart ? Atlas.moss : Atlas.inkSoft)
+                        .foregroundStyle(s.onChart ? Atlas.ink : Atlas.inkSoft)
                     if !s.tags.isEmpty { Text(s.tags.joined(separator: ", ")).foregroundStyle(Atlas.inkSoft) }
                     Menu {
                         ForEach(["после ТМС", "после лазера", "после нейрофидбека", "сонный", "болеет"], id: \.self) { tag in

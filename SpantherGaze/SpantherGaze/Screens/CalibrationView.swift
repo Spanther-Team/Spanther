@@ -30,7 +30,7 @@ struct CalibrationView: View {
                 if started {
                     // Landscape: the dot rows sit at 10, 50 and 90% of a 390 pt high screen, so the text and the
                     // button go between the dot columns (30% and 70% across), clear of every calibration and check dot.
-                    Text(message).font(.system(size: 16, weight: .semibold, design: .serif)).foregroundStyle(Atlas.inkSoft)
+                    Text(message).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundStyle(Atlas.inkSoft)
                         .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
                         .frame(width: 240)
                         .position(x: size.x * 0.3, y: 34)
