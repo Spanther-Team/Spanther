@@ -16,6 +16,8 @@ struct GameView: View {
                             onRecalibrate: { app.beginCalibration(then: .game) },
                             canRecalibrate: app.mode == .eyes, touchMode: app.mode == .touch, decoysOn: scene.decoysOn,
                             onEnergyTap: { [weak scene] in scene?.reloadTap() })
+                    // The combo counter under the score, past the jar; the banner below the top row.
+                    if !paused { CelebrationLayer(fx: scene.hud.fx, comboTop: 66, comboLeading: 104, calloutTop: 84) }
                 }
             }
             .onAppear { if scene == nil { scene = makeScene(size: geo.size) } }

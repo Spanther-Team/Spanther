@@ -137,12 +137,24 @@ private struct ProbeStage: View {
 private struct ProbeDone: View {
     @EnvironmentObject var app: AppModel
     @ObservedObject var session: ProbeSession
+    @StateObject private var fx = StreakFX()
 
     var body: some View {
         if session.phase == .done {
             ZStack {
                 // The probe is over: the sunlit world comes back for the reward.
                 SunlitBackdrop().ignoresSafeArea()
+                // The probe's celebration: here, after the 90 seconds, and never during them. Three fireworks
+                // around the plate, 0.45 s apart, with the chime and the haptics.
+                GeometryReader { geo in
+                    CelebrationLayer(fx: fx)
+                        .onAppear {
+                            let w = geo.size.width, h = geo.size.height
+                            fx.finale(at: [CGPoint(x: w * 0.13, y: h * 0.3), CGPoint(x: w * 0.87, y: h * 0.24),
+                                           CGPoint(x: w * 0.5, y: h * 0.1)])
+                        }
+                }
+                .ignoresSafeArea()
                 done
                     .kineticEntrance()
             }

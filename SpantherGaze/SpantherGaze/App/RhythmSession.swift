@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import Foundation
 import QuartzCore
 
@@ -28,6 +29,9 @@ final class RhythmSession: ObservableObject {
     private(set) var startHost: Double?
     /// Track time at which each note was judged, for the hit and miss animations.
     private(set) var judgedAt: [Double?]
+    /// The judge's combo as a streak, for the angled counter and the milestones' fireworks. No chime here: it
+    /// would blur the beat the winks keep to.
+    let fx = StreakFX(burstScale: 0.8, chimes: false)
     /// Latency of the audio route when the music started (s): about 0.01 on the speaker, 0.15-0.25 on Bluetooth.
     private(set) var outputLatency = 0.0
     /// The score beat the best one kept for this track and level (set when the play ends).
@@ -146,7 +150,11 @@ final class RhythmSession: ObservableObject {
         let before = judge.lastRejected
         let hit = judge.closure(side: side, time: t, aimDistance: { i in i == locked ? 0 : aim.map { $0.distance(to: pts[i]) } },
                                 prefer: locked)
-        if let h = hit { judgedAt[h.index] = t }
+        if let h = hit {
+            judgedAt[h.index] = t
+            let p = pts[h.index]
+            fx.follow(judge.combo, at: CGPoint(x: p.x, y: p.y))
+        }
         if hit == nil, let r = judge.lastRejected, r != before {
             rejections.append(Rejection(index: r.index, reason: r.reason, time: r.time, onBeat: r.distanceSec <= judge.rules.goodSec))
             if rejections.count > 8 { rejections.removeFirst() }
@@ -173,6 +181,7 @@ final class RhythmSession: ObservableObject {
         let t = trackTime(host: host)
         let missed = judge.advance(to: t)
         for i in missed { judgedAt[i] = t }
+        if !missed.isEmpty { fx.follow(judge.combo, at: nil) }
         if t >= track.endSec { finish() }
         return missed
     }
