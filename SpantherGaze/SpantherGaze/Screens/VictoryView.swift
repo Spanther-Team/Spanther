@@ -90,6 +90,10 @@ struct VictoryView: View {
                     RollUp(value: Double(award.after.stars), font: Atlas.metric(17)) { String(Int($0.rounded())) }
                         .foregroundStyle(Atlas.ink)
                 }
+                // On a chip: the sun sits behind this corner.
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .atlasChip()
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Звёзд: \(award.after.stars)")
             }
