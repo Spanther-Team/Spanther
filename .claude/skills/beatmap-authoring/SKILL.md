@@ -13,7 +13,7 @@ time is in `avaudio-rhythm-sync`; judging is in `gaze-wink-judging`.
 
 ```json
 {
-  "format": 1, "id": "198", "title": "198 км/ч", "author": "SPANTHER team", "license": "Own track",
+  "format": 1, "id": "198", "title": "198 km", "author": "honeythehustl3r", "license": "Used with the artist's permission. Artist: Dainal Sovetkhanov (honeythehustl3r)",
   "audio": "winkbeat-198.m4a", "bpm": 99, "firstBeatSec": 0.091, "durationSec": 106.71,
   "charts": {
     "easy":   [{"kind": "circle", "time": 2.515, "x": 0.5, "y": 0.24, "side": "any"}],
