@@ -274,7 +274,9 @@ final class WinkBeatSession: ObservableObject {
                 if let s = spin, play.results[s.index] != nil { spin = nil }
                 let shown = play.visible(at: t).first { play.objects[$0].kind == .spinner }
                 if shown != spinnerShown { spinnerShown = shown }
-                if bot, !spinnerSignalled, let i = shown, t >= play.objects[i].time + 0.6 {
+                // A CI screenshot lands about 3 s after this line and the spinner lasts under 3 s, so it goes early.
+                if bot, !spinnerSignalled, let first = play.objects.first(where: { $0.kind == .spinner }),
+                   t >= first.time - 2.5 {
                     spinnerSignalled = true
                     print("WINKBEAT_SPINNER \(String(format: "%.2f", t))")
                     fflush(stdout)

@@ -484,7 +484,7 @@ jobs:
           # (1:47) and the results.
           xcrun simctl launch --stdout="$OUT/winkbeat.stdout.log" --stderr="$OUT/winkbeat.stderr.log" "$UDID" "$BID" -SpantherAutoplay winkbeat
           # A shot takes 2 to 7 s here, so the spinner (1:05.5 to 1:08.3) is not timed: the app prints
-          # WINKBEAT_SPINNER 0.6 s into it and the step waits for that line.
+          # WINKBEAT_SPINNER 2.5 s before it (a capture lands about 3 s after the line) and the step waits for it.
           sleep 1; shot winkbeat-1-select
           sleep 2; shot winkbeat-2-start
           sleep 21; shot winkbeat-3-play
