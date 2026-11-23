@@ -79,6 +79,8 @@ final class WinkBeatSession: ObservableObject {
     private var botPlayer: WinkBeatBot?
     private var botFrame = 0
     private var botBlinks = 0
+    /// CI: the spinner line is printed once, so the screenshot step can wait for it instead of guessing the time.
+    private var spinnerSignalled = false
     private var timer: Timer?
     private var stampCounter = 0
     private var lastHudPush = 0.0
@@ -144,6 +146,7 @@ final class WinkBeatSession: ObservableObject {
         marks = []
         spin = nil
         spinnerShown = nil
+        spinnerSignalled = false
         hud = WinkBeatHud()
         aim = nil
         readyHost = CACurrentMediaTime()
@@ -271,6 +274,11 @@ final class WinkBeatSession: ObservableObject {
                 if let s = spin, play.results[s.index] != nil { spin = nil }
                 let shown = play.visible(at: t).first { play.objects[$0].kind == .spinner }
                 if shown != spinnerShown { spinnerShown = shown }
+                if bot, !spinnerSignalled, let i = shown, t >= play.objects[i].time + 0.6 {
+                    spinnerSignalled = true
+                    print("WINKBEAT_SPINNER \(String(format: "%.2f", t))")
+                    fflush(stdout)
+                }
             }
             pushHud(force: false, t: t, host: host)
             if play?.failed == true || t > endTime + 1.2 { finish() }
