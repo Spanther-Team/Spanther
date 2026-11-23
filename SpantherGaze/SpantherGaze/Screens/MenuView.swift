@@ -279,6 +279,8 @@ struct MenuView: View {
                   Button { app.openRhythm() } label: { buttonText(L("Выбрать трек")) }
                       .buttonStyle(AtlasPrimaryButton())
                       .disabled(app.rhythmTracks.isEmpty)
+                  Button { app.openWinkBeat() } label: { buttonText("Wink Beat") }
+                      .buttonStyle(AtlasPrimaryButton(fill: Atlas.gold))
               })
     }
 
