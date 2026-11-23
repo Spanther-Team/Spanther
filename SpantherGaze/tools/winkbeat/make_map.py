@@ -2,7 +2,7 @@
 """Wink Beat map generator: one song in, a draft map with easy, normal and hard charts out.
 
     pip install librosa
-    python3 make_map.py song.mp3 --id 198 --title "198 км/ч" --audio winkbeat-198.m4a \
+    python3 make_map.py song.mp3 --id 198 --title "198 km" --author honeythehustl3r --audio winkbeat-198.m4a \
         --out ../../SpantherGaze/Resources/winkbeat-198.json
 
 What it does:
