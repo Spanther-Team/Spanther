@@ -201,7 +201,7 @@ struct SyncCheckView: View {
                         let t = model.tick(hostNow: CACurrentMediaTime())
                         Canvas { g, size in draw(&g, size, t) }
                     }
-                    .frame(width: min(geo.size.width * 0.46, 380))
+                    .frame(width: min(geo.size.width * 0.38, 360))
                     .allowsHitTesting(false)
                     side
                         .frame(maxWidth: .infinity)
@@ -247,8 +247,7 @@ struct SyncCheckView: View {
                 .font(.system(size: 24, weight: .black).italic())
                 .foregroundStyle(Atlas.cream)
                 .padding(.horizontal, 16).padding(.vertical, 6)
-                .background(InkSlab(shape: Slant(), fill: Atlas.ink, depth: 0))
-                .shadow(color: Atlas.gold, radius: 0, x: 5, y: 5)
+                .background(InkSlab(shape: Slant(), fill: Atlas.ink, depth: 5, shadow: Atlas.gold))
             Text(model.route.name)
                 .font(.system(size: 14, weight: .heavy))
                 .foregroundStyle(Atlas.cream)
@@ -305,7 +304,7 @@ struct SyncCheckView: View {
                     .buttonStyle(AtlasSecondaryButton()).frame(width: 96)
             }
             HStack(spacing: 12) {
-                Button { model.save() } label: { Text(L("Сохранить для: {0}", model.route.name)).lineLimit(1) }
+                Button { model.save() } label: { Text(L("Сохранить")).lineLimit(1) }
                     .buttonStyle(AtlasPrimaryButton(fill: Atlas.gold))
                     .disabled(model.result == .tooFewTaps || model.resultMs == model.savedMs)
                 Button { model.start() } label: { Text(L("Ещё раз")) }
