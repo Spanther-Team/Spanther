@@ -108,6 +108,16 @@ Menu, the «Ритм» plate. An original rhythm game drawn as a star atlas on w
 - Tracks: three CC0 tracks composed for the game by `Tools/compose_tracks.py` («Орбита» 88 BPM, «Звёздная пыль» 104, «Метеоритный дождь» 124, about 1–1.5 min). The script writes the `.m4a` files into `SpantherGaze/Resources` and `tracks.json`: tempo, first beat and an accent list (beat, strength 1–3) from the score, which the notes follow. To use another song, put the file in Resources and give its tempo and first beat in `tracks.json`; without accents the notes follow a fixed pattern on the beats. `RhythmTests.testBundledTracks` checks the bundled tracks.
 - CSV rows: `rhythm_start`, `note_hit` and `note_miss` (judgement, timing offset, aim distance, eye, the locked note), `rhythm_end`, `label` and `rhythm_frame` (with the locked note in `locked`: its index, -1 for the start star).
 
+## Wink Beat (in progress)
+
+The next rhythm mode: hit circles, sliders and spinners, played by gaze and winks, on a custom Metal stage (plan agreed with Aziz on 2026-11-23). Milestone 1, the rules, is in GazeCore; nothing is on screen yet.
+
+- Maps: `Resources/winkbeat-<id>.json`, one per song, with easy, normal and hard charts (`WinkBeatMap`). Times in seconds of track time, positions on a 0...1 field. `WinkBeatMap.validate` checks gaps, winks per 5 s (0.85 / 1.3 / 2.0 per second), eye runs and balance, slider orb speed, and that objects on screen together never share a hit zone.
+- Map generator: `tools/winkbeat/make_map.py song.mp3 --id … --title … --audio winkbeat-<id>.m4a --out …` (needs `pip install librosa`). It fits the BPM and first beat, measures bars, picks the strongest half beats under each level's rules, turns long gaps into sliders, puts a spinner on a quiet bar, and places objects on a flowing path. Output is a draft to tune by hand. Test level: Aziz's own track «198 км/ч», 99 BPM, first beat 0.091 s.
+- Judging (`WinkBeatPlay`): Perfect / Great / Good / Miss = 300 / 100 / 50 / 0 within 90 / 160 / 240 ms on normal (easy 120 / 200 / 300, hard 80 / 140 / 210), after the learned wink delay. A wink with the aim off every object in its window uses nothing up. Sliders: wink on the head, then follow the orb (inside 1.5 zones); followed 85% or more keeps the head's grade, 60% or more drops it one step, less is a miss. Spinners: the ring is cut into 8 sectors; hopping the gaze sector to sector around it counts, and only new net progress scores, so jitter on an edge earns nothing. Accuracy = points / (300 x objects). Ranks: SS 100%, S 95% with no miss, A 90%, B 80%, C 70%, D. Energy drains on normal and hard and fails the track at zero; easy never fails.
+- Blinks (`WinkBeatEyes`): two eyes closing within 25 ms are a blink and never play anything. A wink is judged with the aim from 0.1 s before its onset, because the tracked gaze slides while the lid comes down. While any eye is closed and 0.1 s after, the aim holds its last good point. Easy also takes a long blink (both eyes closed 0.3 s or more) for children who cannot wink.
+- `WinkBeatBot` plays a chart through the eyes, the lock and the judge for tests (and later the Simulator smoke): a bot with 25 pt scatter, a 39 pt bias, ±60 ms timing, natural blinks and a 60 pt aim slide while a lid is down scores about 98% / 91% / 88% on the test level, and no blink ever plays an object.
+
 ## Sunlit look (since 2026-11-16)
 
 `Screens/Atlas.swift` holds the look of every screen but the wink test: Aziz's palette (emerald 47A851, sky 388EE8, sandstone gold E8A838, cream FBF4E2, ink 1D1A17 in 2 pt outlines, amber energy FF8A1E for the gaze; vermilion only for danger), heavy rounded type for titles and callouts, tabular digits (`Atlas.metric`) for every number a clinician or parent reads. Shapes are cel style: flat fills on hard ink shadows (`InkSlab`), slanted buttons and chips (`Slant`), plates with two corners cut (`CutPlate`) laid on a colour slab. Motion uses one spring (`Atlas.snap`, response 0.28, damping 0.72): screens spring in from the right (`RootView`), cards land one after another (`kineticEntrance`), the chosen item pops (`selectedPop`), numbers roll (`rolling`, `RollUp`). Reduce Motion turns the movement into fades. The menus stand on `SunlitBackdrop` (sky, a cel sun, a thin strip of far grass). The general techniques (cel shading, ink lines, angled panels, fast springs) are used; nothing is taken from any particular game.
@@ -175,6 +185,8 @@ Menu, the «Занятия» button at the top. For the specialist and the paren
 - The Kazakh texts were written without a native speaker's check.
 
 ## Unverified on device
+
+- Wink Beat: everything. The windows, the 0.1 s pre-onset aim, the 0.3 s long blink and the spinner sectors are starting values for the first phone CSVs.
 
 - The start screen and the one calibration: the camera question from the button, the way back from Settings, the first calibration right after the screen, and whether the menu's recalibration is found when the player moves. Simulator screenshots only. The Kazakh copy needs a native speaker's read.
 
