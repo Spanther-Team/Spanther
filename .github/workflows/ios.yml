@@ -479,6 +479,33 @@ jobs:
           else fail "sync check: no 30 to 40 ms result ($(grep SYNC_RESULT "$OUT/sync.stdout.log" || echo none))"; fi
           xcrun simctl terminate "$UDID" "$BID" || true
 
+          # Wink Beat (-SpantherAutoplay winkbeat): WinkBeatBot plays "198 km" on normal through the eyes filter, the
+          # lock and the judge, on the Metal stage. Difficulty choice ~3 s, start disc ~3 s, then the whole track
+          # (1:47) and the results.
+          xcrun simctl launch --stdout="$OUT/winkbeat.stdout.log" --stderr="$OUT/winkbeat.stderr.log" "$UDID" "$BID" -SpantherAutoplay winkbeat
+          sleep 3; shot winkbeat-1-select
+          sleep 3; shot winkbeat-2-start
+          sleep 21; shot winkbeat-3-play
+          sleep 2; shot winkbeat-4-play
+          sleep 16; shot winkbeat-5-play
+          sleep 30; shot winkbeat-6-spinner
+          sleep 2; shot winkbeat-7-spinner
+          for i in $(seq 1 12); do
+            if grep -q WINKBEAT_RESULT "$OUT/winkbeat.stdout.log"; then break; fi
+            sleep 5
+          done
+          sleep 2; shot winkbeat-8-results
+          if running; then pass "wink beat: app running"; else fail "wink beat: app not running"; fi
+          if python3 - "$OUT/winkbeat.stdout.log" > "$OUT/winkbeat.check.txt" 2>&1 <<'PY'
+          import re, sys
+          line = next((l for l in open(sys.argv[1]) if l.startswith("WINKBEAT_RESULT")), "")
+          print(line.strip() or "no WINKBEAT_RESULT")
+          m = re.match(r"WINKBEAT_RESULT ([0-9.]+) (\w+) (\d+)", line)
+          sys.exit(0 if m and float(m.group(1)) >= 70 else 1)
+          PY
+          then pass "wink beat: $(tail -n 1 "$OUT/winkbeat.check.txt")"; else fail "wink beat: $(tail -n 1 "$OUT/winkbeat.check.txt")"; fi
+          xcrun simctl terminate "$UDID" "$BID" || true
+
           # The report screens with made-up plays (-SpantherDemoReport): the summary after a meteor play, a
           # child's history, and the settings sheet.
           for page in summary history settings; do
@@ -500,7 +527,7 @@ jobs:
               if running; then pass "report $page in $lang: app running"; else fail "report $page in $lang: app not running"; fi
               xcrun simctl terminate "$UDID" "$BID" || true
             done
-            for mode in rhythm eyes pursuit sync; do
+            for mode in rhythm eyes pursuit sync winkbeat; do
               xcrun simctl launch "$UDID" "$BID" -SpantherAutoplay "$mode" -SpantherGateLanguage "$lang"
               sleep 5; shot "lang-$lang-$mode-a"; sleep 10; shot "lang-$lang-$mode-b"
               if running; then pass "$mode in $lang: app running"; else fail "$mode in $lang: app not running"; fi

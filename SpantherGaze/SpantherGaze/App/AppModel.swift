@@ -21,6 +21,8 @@ enum Route: Equatable {
     case probe
     /// Wink Beat's sync check: tap on the clicks, and the phone learns how late this output plays sound.
     case syncCheck
+    /// Wink Beat: osu-like circles, sliders and spinners on a track, played by gaze and one-eye winks.
+    case winkBeat
 }
 
 enum ControlMode { case eyes, touch }
@@ -227,6 +229,8 @@ final class AppModel: ObservableObject {
     /// Rhythm mode: the tracks in the bundle (tracks.json) and the play in progress.
     let rhythmTracks: [RhythmTrack]
     @Published private(set) var rhythm: RhythmSession?
+    /// Wink Beat's play in progress (`openWinkBeat`).
+    @Published private(set) var winkBeat: WinkBeatSession?
     /// The report of the rhythm play that just ended, for its results screen.
     @Published private(set) var rhythmSummary: SessionSummary?
     private var rhythmTimer: Timer?
@@ -269,6 +273,11 @@ final class AppModel: ObservableObject {
             } else if bot == "pursuit" {
                 mode = .eyes
                 route = .pursuit
+            } else if bot == "winkbeat" {
+                // Wink Beat with `WinkBeatBot` as the player: difficulty choice, start disc, the whole track.
+                mode = .eyes
+                winkBeat = makeWinkBeat(byEye: true)
+                route = .winkBeat
             } else if bot == "sync" {
                 // The sync check with a bot that taps 35 ms after each click.
                 route = .syncCheck
@@ -613,6 +622,15 @@ final class AppModel: ObservableObject {
                           blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
                           correction: adapter == nil ? nil : aimCorrection, locked: rhythm?.lock.locked, light: s.light, raw: rawAim, alt: altAim)
         }
+        if route == .winkBeat, let w = winkBeat {
+            w.sample(host: s.timestamp, aim: gazePoint, lids: s.features == nil ? nil : s.blink)
+            if let f = s.features {
+                logger.sample(kind: "winkbeat_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
+                              blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
+                              correction: adapter == nil ? nil : aimCorrection, locked: w.lock.locked, light: s.light,
+                              raw: rawAim, alt: altAim)
+            }
+        }
         if route == .winkTest, let f = s.features {
             logger.sample(kind: "wink_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
                           blink: s.blink, hold: false, processingMs: s.processingMs, light: s.light, raw: rawAim, alt: altAim)
@@ -734,6 +752,61 @@ final class AppModel: ObservableObject {
     }
 
     func logWinkCue(side: WinkSide, time: Double) { logger.cue(side: side, time: time) }
+
+    // MARK: Wink Beat
+
+    /// Opens Wink Beat's difficulty choice. By eye it needs the session's calibration first.
+    func openWinkBeat() {
+        let byEye = eyeTrackingSupported
+        mode = byEye ? .eyes : .touch
+        if byEye, model == nil {
+            beginCalibration(then: .winkBeat)
+            return
+        }
+        winkBeat?.leave()
+        winkBeat = makeWinkBeat(byEye: byEye)
+        route = .winkBeat
+    }
+
+    /// Back to the menu from Wink Beat.
+    func leaveWinkBeat() {
+        winkBeat?.leave()
+        winkBeat = nil
+        route = .menu
+    }
+
+    private func makeWinkBeat(byEye: Bool) -> WinkBeatSession {
+        let map = Bundle.main.url(forResource: "winkbeat-198", withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? WinkBeatMap.load(from: $0) }
+        let bot = autoplay == "winkbeat"
+        let w = WinkBeatSession(map: map, byEye: byEye, bot: bot,
+                                measuredErrorPt: byEye && !bot ? report?.meanErrorPt ?? 0 : 0,
+                                zoneFloorPt: byEye && !bot ? zoneFloorPt : 0)
+        let teach = byEye && !bot
+        w.onStart = { [weak self] target, host in
+            // The start disc was winked at: the player looked at it, so the aim is recentred on it.
+            if teach { _ = self?.learnLabel(target: target, before: host, source: "winkbeat-start") }
+        }
+        w.onPlayed = { [weak self] target, host in
+            if teach { _ = self?.learnLabel(target: target, before: host, source: "winkbeat") }
+        }
+        w.onBegin = { [weak self] start, play in
+            guard let self, let map else { return }
+            self.logger.rhythmStart(time: start, track: map.id, level: "winkbeat-\(play.rules.difficulty.rawValue)",
+                                    beatSec: map.beatSec, audioLatency: AVAudioSession.sharedInstance().outputLatency,
+                                    latency: play.latencySec, notes: play.objects.count)
+        }
+        w.onJudged = { [weak self] index, target, grade, offset, host in
+            self?.logger.rhythmNote(hit: grade != .miss, time: host, index: index, target: target,
+                                    judgement: grade.rawValue, offset: offset, aimDistance: nil, side: nil,
+                                    locked: self?.winkBeat?.lock.locked)
+        }
+        w.onEnd = { [weak self] host, play in
+            self?.logger.rhythmEnd(time: host, score: play.score, accuracy: play.accuracy, latency: play.latencySec)
+        }
+        return w
+    }
 
     // MARK: rhythm mode
 
@@ -1222,6 +1295,7 @@ final class AppModel: ObservableObject {
     func continueAfterCalibration() {
         switch afterCalibration {
         case .rhythm: openRhythm()
+        case .winkBeat: openWinkBeat()
         case .pursuit: openPursuit(byEye: true)
         case .probe: openProbe()
         case .game:

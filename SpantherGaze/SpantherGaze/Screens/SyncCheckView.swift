@@ -204,6 +204,7 @@ struct SyncCheckView: View {
                     .frame(width: min(geo.size.width * 0.38, 360))
                     .allowsHitTesting(false)
                     side
+                        .padding(.leading, 26)
                         .frame(maxWidth: .infinity)
                 }
                 .padding(.top, 70)
