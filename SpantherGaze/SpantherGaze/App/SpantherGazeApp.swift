@@ -73,6 +73,7 @@ struct RootView: View {
                 case .pursuit: PursuitView()
                 case .clinic: ClinicView()
                 case .probe: ProbeView()
+                case .syncCheck: SyncCheckView(bot: app.autoplay == "sync")
                 }
             }
             .transition(screenTransition)
@@ -113,7 +114,7 @@ struct RootView: View {
             Palette.space.ignoresSafeArea()
         case .probe:
             ProbeLook.paper.ignoresSafeArea()
-        case .calibration, .check, .rhythm, .pursuit, .game:
+        case .calibration, .check, .rhythm, .pursuit, .game, .syncCheck:
             Atlas.paper.ignoresSafeArea()
         case .menu, .result, .clinic:
             ZStack {

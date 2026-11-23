@@ -19,6 +19,8 @@ enum Route: Equatable {
     case clinic
     /// The frozen 90-second probe at the start of a session.
     case probe
+    /// Wink Beat's sync check: tap on the clicks, and the phone learns how late this output plays sound.
+    case syncCheck
 }
 
 enum ControlMode { case eyes, touch }
@@ -267,6 +269,9 @@ final class AppModel: ObservableObject {
             } else if bot == "pursuit" {
                 mode = .eyes
                 route = .pursuit
+            } else if bot == "sync" {
+                // The sync check with a bot that taps 35 ms after each click.
+                route = .syncCheck
             } else if bot == "probe" {
                 // The clinic's flow for the Simulator: a made-up child with a course, then the probe played by the bot.
                 mode = .eyes

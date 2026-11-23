@@ -469,6 +469,16 @@ jobs:
           then pass "probe: $(tail -n 1 "$OUT/probe.check.txt")"; else fail "probe: $(tail -n 1 "$OUT/probe.check.txt")"; fi
           xcrun simctl terminate "$UDID" "$BID" || true
 
+          # Wink Beat's sync check (-SpantherAutoplay sync): 16 clicks at 100 BPM and a bot that taps 35 ms after each.
+          # Without a sound card the time runs from the planned start; either way the result must read 30 to 40 ms.
+          xcrun simctl launch --stdout="$OUT/sync.stdout.log" --stderr="$OUT/sync.stderr.log" "$UDID" "$BID" -SpantherAutoplay sync
+          sleep 6; shot sync-1-running
+          sleep 12; shot sync-2-result
+          if running; then pass "sync check: app running"; else fail "sync check: app not running"; fi
+          if grep -qE "SYNC_RESULT (30|35|40) " "$OUT/sync.stdout.log"; then pass "sync check: $(grep SYNC_RESULT "$OUT/sync.stdout.log")"
+          else fail "sync check: no 30 to 40 ms result ($(grep SYNC_RESULT "$OUT/sync.stdout.log" || echo none))"; fi
+          xcrun simctl terminate "$UDID" "$BID" || true
+
           # The report screens with made-up plays (-SpantherDemoReport): the summary after a meteor play, a
           # child's history, and the settings sheet.
           for page in summary history settings; do
@@ -490,7 +500,7 @@ jobs:
               if running; then pass "report $page in $lang: app running"; else fail "report $page in $lang: app not running"; fi
               xcrun simctl terminate "$UDID" "$BID" || true
             done
-            for mode in rhythm eyes pursuit; do
+            for mode in rhythm eyes pursuit sync; do
               xcrun simctl launch "$UDID" "$BID" -SpantherAutoplay "$mode" -SpantherGateLanguage "$lang"
               sleep 5; shot "lang-$lang-$mode-a"; sleep 10; shot "lang-$lang-$mode-b"
               if running; then pass "$mode in $lang: app running"; else fail "$mode in $lang: app not running"; fi

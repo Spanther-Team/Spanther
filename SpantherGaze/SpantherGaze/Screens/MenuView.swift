@@ -15,6 +15,8 @@ struct MenuView: View {
     @State private var showSettings = false
     /// The wink test was asked for in the settings: it opens once their sheet has closed.
     @State private var winkTestAsked = false
+    /// The sync check was asked for in the settings: it opens once their sheet has closed.
+    @State private var syncCheckAsked = false
 
     var body: some View {
         // The smallest screens (iPhone SE, 4.7") cannot fit the whole menu with a warning on it: there it
@@ -32,12 +34,19 @@ struct MenuView: View {
             VictoryView(summary: v.summary, award: v.award) { victory = nil }
         }
         .sheet(isPresented: $showSettings, onDismiss: {
+            if syncCheckAsked {
+                syncCheckAsked = false
+                app.route = .syncCheck
+            }
             guard winkTestAsked else { return }
             winkTestAsked = false
             app.beginWinkTest()
         }) {
             SettingsSheet(onWinkTest: {
                 winkTestAsked = true
+                showSettings = false
+            }, onSyncCheck: {
+                syncCheckAsked = true
                 showSettings = false
             })
             .environmentObject(app)
@@ -325,6 +334,8 @@ private struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     /// Asks the menu to open the wink test once this sheet has closed.
     let onWinkTest: () -> Void
+    /// The same for Wink Beat's sound sync check.
+    let onSyncCheck: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -358,6 +369,7 @@ private struct SettingsSheet: View {
                     HStack(spacing: 20) {
                         Button(action: onWinkTest) { Label(L("Тест подмигиваний"), systemImage: "eye.slash") }
                             .disabled(!app.eyeTrackingSupported)
+                        Button(action: onSyncCheck) { Label(L("Синхронизация звука"), systemImage: "metronome") }
                         ShareLink(item: app.logURL) { Label(L("CSV последней сессии"), systemImage: "square.and.arrow.up") }
                             .accessibilityLabel(L("Экспорт CSV последней сессии"))
                         Spacer(minLength: 0)

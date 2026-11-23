@@ -152,8 +152,109 @@ final class SoundEngine {
         engine = nil
         voices = []
         padNode = nil
+        // The music player went with the engine; its screen hears of the new output and starts again.
+        music = nil
+        musicFormat = nil
+        setMusicSnapshot(nil, start: nil)
         startIfHeld()
     }
+
+    // MARK: Music (Wink Beat)
+
+    /// Wink Beat's music player (skill `avaudio-rhythm-sync`): one whole track, or the sync check's clicks, as one
+    /// buffer on its own player node into the main mixer, so the node's sample clock is the track's clock. Made when
+    /// music first plays. On `queue`.
+    private var music: AVAudioPlayerNode?
+    private var musicFormat: AVAudioFormat?
+    /// What the screens read every frame from the main thread: the playing node and its planned start (host s).
+    private let musicLock = NSLock()
+    private var musicNode: AVAudioPlayerNode?
+    private var musicStartHost: Double?
+
+    private func setMusicSnapshot(_ node: AVAudioPlayerNode?, start: Double?) {
+        musicLock.lock()
+        musicNode = node
+        musicStartHost = start
+        musicLock.unlock()
+    }
+
+    /// Mono Float32 samples at `sampleRate` as a buffer for `playMusic` (the sync check's clicks).
+    func musicBuffer(_ samples: [Float], sampleRate: Double) -> AVAudioPCMBuffer? {
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+              let b = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let ch = b.floatChannelData else { return nil }
+        b.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in ch[0].update(from: src.baseAddress!, count: samples.count) }
+        return b
+    }
+
+    /// A whole audio file decoded into memory in its processing format, so nothing decodes while it plays. A track
+    /// takes a moment: call it off the main thread.
+    static func musicBuffer(contentsOf url: URL) -> AVAudioPCMBuffer? {
+        guard let file = try? AVAudioFile(forReading: url),
+              let b = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))
+        else { return nil }
+        do { try file.read(into: b) } catch { return nil }
+        return b
+    }
+
+    /// Plays `buffer` from its first sample at host time `startHost` (the `CACurrentMediaTime` clock), replacing
+    /// what the music player had. The caller holds the engine (`hold("music", true)`). Any thread.
+    func playMusic(_ buffer: AVAudioPCMBuffer, startHost: Double) {
+        queue.async { [weak self] in self?.playMusicOnQueue(buffer, startHost: startHost) }
+    }
+
+    private func playMusicOnQueue(_ buffer: AVAudioPCMBuffer, startHost: Double) {
+        startIfHeld()
+        guard let engine, engine.isRunning else {
+            // No output (a Simulator without a sound card): the screens keep time on the planned start.
+            setMusicSnapshot(nil, start: startHost)
+            return
+        }
+        if music == nil || musicFormat != buffer.format {
+            if let old = music {
+                old.stop()
+                engine.detach(old)
+            }
+            let node = AVAudioPlayerNode()
+            engine.attach(node)
+            engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
+            music = node
+            musicFormat = buffer.format
+        }
+        guard let node = music else { return }
+        node.stop()
+        node.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
+        node.play(at: AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: startHost)))
+        setMusicSnapshot(node, start: startHost)
+    }
+
+    /// Stops the music player. Any thread.
+    func stopMusic() {
+        queue.async { [weak self] in
+            self?.music?.stop()
+            self?.setMusicSnapshot(nil, start: nil)
+        }
+    }
+
+    /// The music player's newest render for `WinkBeatClock`: seconds of track handed to the output, and that
+    /// render's host time. Nil while no music plays, before its start, and on a Simulator without sound (the caller
+    /// then keeps time on its planned start). Any thread.
+    func musicReading() -> WinkBeatClock.Reading? {
+        musicLock.lock()
+        let node = musicNode, start = musicStartHost
+        musicLock.unlock()
+        guard let node, let start, let nodeTime = node.lastRenderTime, nodeTime.isSampleTimeValid,
+              nodeTime.isHostTimeValid, let playerTime = node.playerTime(forNodeTime: nodeTime),
+              playerTime.sampleRate > 0 else { return nil }
+        let host = AVAudioTime.seconds(forHostTime: nodeTime.hostTime)
+        // Renders from before the start say nothing about where the track is.
+        guard host >= start - 0.002 else { return nil }
+        return .init(renderedSec: Double(playerTime.sampleTime) / playerTime.sampleRate, host: host)
+    }
+
+    /// Whether sound can be heard now (the engine runs), for the screens' warnings.
+    var isRunning: Bool { queue.sync { engine?.isRunning ?? false } }
 
     private static func sourceNode(for pad: AmbientPad, format: AVAudioFormat) -> AVAudioSourceNode {
         AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
