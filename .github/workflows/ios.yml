@@ -483,13 +483,14 @@ jobs:
           # lock and the judge, on the Metal stage. Difficulty choice ~3 s, start disc ~3 s, then the whole track
           # (1:47) and the results.
           xcrun simctl launch --stdout="$OUT/winkbeat.stdout.log" --stderr="$OUT/winkbeat.stderr.log" "$UDID" "$BID" -SpantherAutoplay winkbeat
-          sleep 3; shot winkbeat-1-select
-          sleep 3; shot winkbeat-2-start
+          # Each shot takes about 2 s; the spinner is at 1:05.5 to 1:08.3 of the track.
+          sleep 1; shot winkbeat-1-select
+          sleep 2; shot winkbeat-2-start
           sleep 21; shot winkbeat-3-play
           sleep 2; shot winkbeat-4-play
           sleep 16; shot winkbeat-5-play
-          sleep 30; shot winkbeat-6-spinner
-          sleep 2; shot winkbeat-7-spinner
+          sleep 18; shot winkbeat-6-spinner
+          shot winkbeat-7-spinner
           for i in $(seq 1 12); do
             if grep -q WINKBEAT_RESULT "$OUT/winkbeat.stdout.log"; then break; fi
             sleep 5

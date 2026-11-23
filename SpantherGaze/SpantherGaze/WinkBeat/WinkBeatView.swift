@@ -505,8 +505,10 @@ struct WinkBeatPlayScreen: View {
                 }
                 .frame(width: 124 * s, height: 56 * s)
                 .rotationEffect(.degrees(st.id % 2 == 0 ? -9 : 7))
-                .position(x: CGFloat(st.at.x), y: max(36 * s, CGFloat(st.at.y) - 62 * s))
-                .transition(reduceMotion ? .opacity : .scale(scale: 2.2).combined(with: .opacity))
+                .position(x: CGFloat(st.at.x),
+                          y: CGFloat(st.at.y) < 120 * s ? CGFloat(st.at.y) + 62 * s : CGFloat(st.at.y) - 62 * s)
+                .transition(reduceMotion ? .opacity
+                            : .asymmetric(insertion: .scale(scale: 2.2).combined(with: .opacity), removal: .opacity))
             }
         }
         .animation(.spring(response: 0.22, dampingFraction: 0.62), value: session.stamps.map(\.id))
@@ -676,10 +678,10 @@ struct WinkBeatResults: View {
             backdrop
             if let play = session.play {
                 stamp(play, s)
-                    .position(x: size.width * 0.24, y: size.height * 0.46)
+                    .position(x: size.width * 0.2, y: size.height * 0.46)
                 numbers(play, s)
-                    .frame(width: size.width * 0.5, alignment: .leading)
-                    .position(x: size.width * 0.73, y: size.height / 2)
+                    .frame(width: size.width * 0.45, alignment: .leading)
+                    .position(x: size.width * 0.75, y: size.height / 2)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -693,16 +695,16 @@ struct WinkBeatResults: View {
             g.fill(Path(CGRect(origin: .zero, size: sz)), with: .color(Atlas.cream))
             var slab = Path()
             slab.move(to: .zero)
-            slab.addLine(to: CGPoint(x: sz.width * 0.535, y: 0))
-            slab.addLine(to: CGPoint(x: sz.width * 0.393, y: sz.height))
+            slab.addLine(to: CGPoint(x: sz.width * 0.46, y: 0))
+            slab.addLine(to: CGPoint(x: sz.width * 0.32, y: sz.height))
             slab.addLine(to: CGPoint(x: 0, y: sz.height))
             slab.closeSubpath()
             g.fill(slab, with: .color(Atlas.emerald))
             var stripe = Path()
-            stripe.move(to: CGPoint(x: sz.width * 0.535, y: 0))
-            stripe.addLine(to: CGPoint(x: sz.width * 0.576, y: 0))
-            stripe.addLine(to: CGPoint(x: sz.width * 0.434, y: sz.height))
-            stripe.addLine(to: CGPoint(x: sz.width * 0.393, y: sz.height))
+            stripe.move(to: CGPoint(x: sz.width * 0.46, y: 0))
+            stripe.addLine(to: CGPoint(x: sz.width * 0.50, y: 0))
+            stripe.addLine(to: CGPoint(x: sz.width * 0.36, y: sz.height))
+            stripe.addLine(to: CGPoint(x: sz.width * 0.32, y: sz.height))
             stripe.closeSubpath()
             g.fill(stripe, with: .color(Atlas.gold))
             g.stroke(stripe, with: .color(Atlas.ink), style: StrokeStyle(lineWidth: 4, lineJoin: .round))
