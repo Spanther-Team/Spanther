@@ -7,12 +7,12 @@ description: Sample-accurate rhythm game audio clock, beatmap parsing, and laten
 
 Today `RhythmSession` plays music with `AVAudioPlayer.play(atTime:)` and maps host time to track time through
 `startHost`. Wink Beat moves the music onto the app's one `AVAudioEngine` (`Audio/SoundEngine.swift`) with an
-`AVAudioPlayerNode`, and takes track time from the audio clock. Judging stays in `GazeCore.RhythmJudge`.
+`AVAudioPlayerNode`, and takes track time from the audio clock. Judging is `GazeCore.WinkBeatPlay` (`gaze-wink-judging`).
 
 ## 1. Forbidden clocks
 
 3.1. Never drive note spawning, approach ring animation or hit windows with `Timer`, `DispatchQueue.asyncAfter`,
-`SKAction` / `SCNAction` durations, or accumulated frame deltas (`CACurrentMediaTime` differences added up).
+`SKAction` or animation durations, or accumulated frame deltas (`CACurrentMediaTime` differences added up).
 They drift against the audio and jump after a stall. Every frame computes positions from the current track time.
 
 ## 2. Audio clock
@@ -56,25 +56,21 @@ node's sample clock.
   (wink track time minus beat time) after dropping the first 2 is the offset. Show it as `+12 ms` with
   `.monospacedDigit()` and let the player nudge it in 5 ms steps.
 - Visual offset is separate from input offset only if testing shows a need; start with one value.
-- `RhythmJudge` already learns how late winks land; keep that, apply the device offset before it, and log both
+- `WinkBeatPlay` already learns how late winks land (`latencySec`); keep that, apply the device offset before it, and log both
   in the session CSV so replays (`swift run -c release GazeReplay <csv>`) reproduce the timing.
 
 ## 4. Beatmaps
 
-- Beatmap is plain JSON in `Resources`, parsed by a `Codable` type in `GazeCore` (extends today's `RhythmTrack`
-  / `RhythmNote`): times in seconds of track time as floats (or ms as integers), never in frames; positions in a
-  normalised 0..1 play field, mapped to screen points at layout time.
-- Fields: format version, track file, BPM and first beat offset (for the metronome and grid), notes with time,
-  side (left, right, any), kind (tap, hold with end time, slider with path points), level tags.
-- Validate on load (sorted times, ends after starts, inside the field); on error fall back to `ChartGenerator`
-  and log it. Parse in `GazeCore` with tests on Linux.
-- Only CC0 or own music and original charts. Never import maps, music or files from other rhythm games.
+- Format, validation and the generator are in `beatmap-authoring` (`winkbeat-<id>.json`, `WinkBeatMap`). Times are
+  seconds of track time as heard, so the clock here and the map agree with no conversion.
+- Slider ticks and the stage's beat pulses use the map's `bpm` and `firstBeatSec`.
+- An invalid map is not played: show the issues in debug builds and skip the song; never crash.
 
 ## 5. Judging and visuals from one time
 
 - Each frame: `t = heardTrackTime()`. A note's approach progress is `(t - (note.time - lead)) / lead`. Rings,
   orbs and HUD read this; nothing keeps its own timer.
-- Windows (`RhythmRules`: perfect 90 ms, good 160 ms, ok 240 ms) are applied to wink track time minus note time.
+- Windows (`WinkBeatDifficulty`: normal Perfect 90 ms, Great 160 ms, Good 240 ms) are applied to wink track time minus object time.
   Kids' windows are a level setting, not a code fork.
 - Tests in `GazeCore`: host-to-track mapping with a fake clock (latency, buffer, offset, route change jump), and
   beatmap parse and validation.

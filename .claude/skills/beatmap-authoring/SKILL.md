@@ -1,76 +1,64 @@
 ---
 name: beatmap-authoring
-description: Beatmap format, validation and authoring for Wink Beat, extending GazeCore's RhythmTrack and tracks.json, plus the chart generator for CC0 music. Use when adding a song, writing or generating charts, changing the beatmap JSON, or adding hold and slider notes.
+description: Wink Beat map format (winkbeat-<id>.json with circles, sliders, spinners), validation, and making maps from a song with tools/winkbeat/make_map.py. Use when adding a song, generating or hand-tuning charts, or changing the map JSON or its rules.
 ---
 
-# Beatmaps for Wink Beat
+# Maps for Wink Beat
 
-Charts live in `SpantherGaze/SpantherGaze/Resources/tracks.json` and are decoded by `RhythmTrack` in
-`GazeCore/Sources/GazeCore/Rhythm.swift`. Generation is `ChartGenerator`. Timing at play time is in
-`avaudio-rhythm-sync`; judging is in `gaze-wink-judging`.
+One JSON file per song in `SpantherGaze/SpantherGaze/Resources/winkbeat-<id>.json`, decoded by `WinkBeatMap` in
+`GazeCore/Sources/GazeCore/WinkBeatMap.swift`. The old rhythm mode's `tracks.json` stays as it is. Timing at play
+time is in `avaudio-rhythm-sync`; judging is in `gaze-wink-judging`.
 
 ## 1. Format
 
-Keep one JSON array of tracks, backward compatible: every new field is optional, and today's files still decode.
-
 ```json
 {
-  "id": "orbit", "title": "...", "author": "...", "license": "CC0",
-  "file": "orbit.m4a", "bpm": 120, "firstBeatSec": 0.52, "beats": 96,
-  "phraseBeats": 8,
-  "accents": [[0, 3], [2, 2], [3.5, 1]],
-  "format": 2,
-  "notes": {
-    "easy":  [{"time": 0.52, "x": 0.3, "y": 0.5, "side": "any"}],
-    "hard":  [{"time": 1.02, "x": 0.6, "y": 0.4, "side": "left", "kind": "hold", "end": 1.52},
-              {"time": 2.02, "x": 0.4, "y": 0.6, "side": "right", "kind": "slider",
-               "path": [[0.4, 0.6], [0.55, 0.45], [0.7, 0.6]], "end": 3.02}]
+  "format": 1, "id": "198", "title": "198 км/ч", "author": "SPANTHER team", "license": "Own track",
+  "audio": "winkbeat-198.m4a", "bpm": 99, "firstBeatSec": 0.091, "durationSec": 106.71,
+  "charts": {
+    "easy":   [{"kind": "circle", "time": 2.515, "x": 0.5, "y": 0.24, "side": "any"}],
+    "normal": [{"kind": "slider", "time": 14.03, "end": 15.25, "x": 0.3, "y": 0.5, "side": "left",
+                "path": [[0.42, 0.38], [0.55, 0.45]]},
+               {"kind": "spinner", "time": 65.55, "end": 68.27}],
+    "hard":   [{"kind": "slider", "time": 20.1, "end": 21.3, "x": 0.6, "y": 0.4, "side": "right",
+                "path": [[0.7, 0.3], [0.78, 0.4]], "repeats": 1}]
   }
 }
 ```
 
-- Times are seconds of track time as heard (0 = first sample of the file), as doubles. Never frames, never beats
-  in the stored notes (beats are only in `accents`).
-- Positions are the 0..1 play field (x left to right, y top to bottom), mapped to screen points at layout time.
-  Keep notes inside 0.08..0.92 so zones stay on screen and clear of the HUD.
-- `side`: `any`, `left`, `right`. `kind` (new, default `tap`): `tap`, `hold` (needs `end`), `slider` (needs `end`
-  and `path` of at least 2 points). Add `format: 2` when a file uses new kinds.
-- Add the new fields to `RhythmNote` as optionals with defaults so `RhythmNote(time:x:y:side:)` keeps working.
+- Times are seconds of track time as heard (0 = first sample of the file), doubles. Never frames or beats.
+- Positions on the 0...1 field (x left to right, y top to bottom), inside 0.08...0.92. Spinners sit in the centre.
+- `kind`: `circle`, `slider` (needs `end` and `path`, the points after the head; optional `repeats`), `spinner`
+  (needs `end`, at least 1 s, side `any`). No `hold` (agreed decision 4).
+- `side`: `any`, `left`, `right`. Easy uses `any` only.
+- New fields must be optional with defaults so existing files still decode; bump `format` only for breaking changes.
 
-## 2. Validation (in GazeCore, tested on Linux)
+## 2. Validation (`WinkBeatMap.validate`, tested on Linux)
 
-A `RhythmTrack.validate() -> [ChartIssue]` (or similar) checks, per level:
-- notes sorted by time, all inside `0 ..< endSec`, positions inside the field;
-- gaps at least the level's `minGapSec` (easy 1.0 s, normal 0.55, hard 0.4) and density at most `maxPerSec`
-  (0.8 / 1.3 / 2.0 per second): winking faster than about twice a second is hard for anyone and slower for kids;
-- hold and slider: `end > time`, holds at most about 1 s, none on easy; nothing starts before the previous
-  hold or slider ends;
-- consecutive notes far enough apart that zones (from `RhythmRules`) do not overlap, or the lock cannot tell them apart;
-- the same eye not asked more than about 4 times in a row on normal (fatigue), and left and right balanced
-  over a track.
-On a failed level, log the issues and fall back to `ChartGenerator` for that level; never crash.
+Per difficulty, on the reference field (844 x 390 pt):
+- sorted, inside the track; next start at least `minGapSec` after the previous end (1.0 / 0.55 / 0.4 s);
+- winks in any 5 s window at most `maxWinksPerSec × 5` (0.85 / 1.3 / 2.0 per second);
+- slider orb speed at most 0.45 / 0.6 / 0.8 screen widths per second (eyes follow well up to there);
+- objects on screen together (within `leadSec`) at least two base zones apart from heads and slider tails;
+- same eye at most 4 times in a row on normal and hard, and left and right within 35–65% over the chart.
+`WinkBeatTests.testBundledMapIsPlayable` must pass for every shipped map, and the realistic bot must win it.
 
-## 3. Generated charts
+## 3. Making a map from a song
 
-- `ChartGenerator` writes notes from `accents` (strength 3 / 2 / 1 for easy / normal / hard) or the beat grid,
-  taking a new direction each phrase, with each level's `step` between notes. Keep it deterministic (seeded `Rng`)
-  so tests and replays reproduce charts.
-- Extend it for sides (alternate eyes on phrases, `any` on easy) and, later, holds on long accents.
-- A hand-made level in `notes` always wins over generation.
+1. Music: the team's own or CC0, with author and license in the file. Never music, maps or files from other rhythm
+   games, and no names or looks from them.
+2. `pip install librosa`, then
+   `python3 SpantherGaze/tools/winkbeat/make_map.py song.mp3 --id <id> --title "<title>" --audio winkbeat-<id>.m4a --out SpantherGaze/SpantherGaze/Resources/winkbeat-<id>.json`.
+   It fits BPM and first beat (an integer BPM wins within 0.05), finds the downbeat from the low end, measures bars,
+   picks the strongest half beats under each level's budget and rules, turns long gaps into sliders, puts a spinner
+   on quiet bars mid-song, places objects on a flowing path with no zone overlaps, and assigns eyes.
+3. Encode the audio: `ffmpeg -i song.mp3 -map_metadata -1 -c:a aac -b:a 192k winkbeat-<id>.m4a`. Check the m4a decodes
+   with zero lag against the source (cross-correlate the first seconds), or the first beat is off.
+4. Run the Linux tests, look at the bot's accuracy per level, then play it on the phone and tune by hand in the JSON
+   (hand edits win; do not regenerate over them without asking).
+5. Steady-tempo songs map well automatically; songs with tempo changes need hand work.
 
-## 4. Adding a song
+## 4. Later
 
-1. Music: CC0 or the team's own, with author and license in the entry. Never music, charts or files from other
-   rhythm games.
-2. Export AAC `.m4a`, 44.1 or 48 kHz, trimmed, with a clean first beat; put it in `Resources`.
-3. Find `bpm` and `firstBeatSec` (beat tracking offline, or tap along in a DAW); check against a metronome
-   overlay that the grid stays on the beat to the end. Variable tempo songs need hand-made notes.
-4. Write `accents` for the melody, or hand-made notes per level.
-5. Run the validation tests, then play it in the Simulator with the bot (`WinkBot`) and on the phone.
-6. Credit the track wherever the existing tracks are credited.
-
-## 5. Tooling (optional, later)
-
-- A small `swift run` tool in `GazeCore` (next to `GazeReplay`) that prints a chart's per-level stats and issues,
-  and can write a generated chart out as hand-made notes for editing.
+- A per-song "beat track" (kick, snare and energy over time) for the stage's pulses, written by the same script.
 - No in-app editor until Aziz asks for one.

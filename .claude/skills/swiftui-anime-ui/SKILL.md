@@ -1,6 +1,6 @@
 ---
 name: swiftui-anime-ui
-description: High-performance SwiftUI patterns for iOS 17+ anime-styled game interfaces running alongside 60 FPS ARKit tracking. Use when building or changing any Wink Beat screen, HUD, menu, result card or settings panel in SpantherGaze.
+description: High-performance SwiftUI patterns for iOS 17+ (the app targets 17.0 since PR #50) Persona-inspired kinetic anime game interfaces running alongside 60 FPS ARKit tracking. Use when building or changing any Wink Beat screen, HUD, menu, result card or settings panel in SpantherGaze.
 ---
 
 # SwiftUI anime UI for Wink Beat
@@ -48,33 +48,52 @@ ARKit frame. `@Observable` tracks reads per property, so a view only redraws whe
 - Hit timing and judging never depend on SwiftUI redraws: the view shows what the judge decided
   (see `avaudio-rhythm-sync`).
 
-## 3. Kinetic anime look
+## 3. Kinetic anime look (Persona-inspired, our own)
 
-1.3. Layouts use sharp angled `Shape` containers, thick dark ink borders, high-contrast gradients and fast
-springs.
+Aziz (2026-11-23): the interface should feel like the Persona games and must not look like generic AI output. We take
+the energy and the composition techniques, in our own palette and shapes, and copy nothing recognisable.
 
-- Shapes: custom `Shape` types with cut corners and skew (e.g. `SlashPanel(cut: 14, skew: 8)`), not
-  `RoundedRectangle`. Angle labels and cards by 4 to 8 degrees with `.rotationEffect`, keep the text inside
-  readable (counter-rotate if a block is long).
-- Ink border: stroke the same shape with `lineWidth: 3` to `4`, colour ink `#14102A`, `.strokeBorder` so it
-  stays inside the frame. Hard drop shadow: an offset copy of the shape in ink (x 4, y 4), no blur.
-- Wink Beat palette (define once as `Color` statics in one file, e.g. `WinkBeatPalette`):
-  - twilight indigo `#1E1B4B` to `#312E81` (backgrounds)
-  - cyan `#22D3EE` (left eye, info)
-  - sakura magenta `#EC4899` (right eye, combo)
-  - sunlit gold `#FBBF24` (perfect, rewards)
-  - ink `#14102A`, paper `#FFF7ED` (text on dark)
-  Use `LinearGradient` with 2 stops at a steep angle; no more than two accent colours per panel.
-  Note: the brand rules say "no neon" for the app as a whole. Keep these accents saturated but not glowing
-  (no blur halos, no `shadow(radius:)` glow), and confirm with Aziz before reusing them outside Wink Beat.
-- Motion: one shared spring, `static let snap = Animation.spring(response: 0.28, dampingFraction: 0.72)`.
-  Use it for panel entrances, selection pops and judgement stamps. Stagger lists by 0.04 s per item.
-- Heavy type: `.font(.system(size:, weight: .heavy, design: .rounded))` or the app's display font; tracking
-  slightly wide on short labels.
-- Safety: flashes under 3 per second and never full screen; respect `accessibilityReduceMotion` (swap springs
-  for fades, stop shakes); contrast at least 4.5:1 for text. The audience includes children in a rehab pilot.
-- Originality: general techniques only. No names, logos, colour schemes, sounds or layouts recognisable from
-  any existing rhythm game or anime.
+1.3. Every screen is a composition of layered, tilted slabs with thick ink borders, hard shadows, oversized
+numbers and type, and fast snappy motion.
+
+**Composition**
+- Layered slabs: 2 to 4 overlapping panels per screen, each tilted 4 to 12 degrees in alternating directions, cut
+  corners and a skewed edge (`SlashPanel(cut: 14, skew: 8)` style `Shape`s), never `RoundedRectangle`. Text inside
+  a tilted slab can sit level (counter-rotate long text).
+- Ink: stroke the same shape with 3 to 4 pt ink `#1D1A17` (`.strokeBorder`), plus a hard offset copy in ink (x 4–6,
+  y 4–6) as the shadow. No blur, no soft drop shadows.
+- Scale contrast: one hero element per screen at 3 to 5 times the body size (the score on results, the rank letter,
+  the combo number, the song title on select). Labels small, numbers huge.
+- Type: heavy display type (`.system(size:, weight: .black, design: .default)` or the app's display font), set in
+  italics or skewed 8 to 12 degrees, mixing two sizes inside one label (big first word, small rest). Tracking tight
+  on numbers, wide on short labels. OFL fonts only.
+- Callouts: judgement words (Perfect, Great, Good, Miss) and combo milestones appear as stamps in our own jagged
+  burst shape (12 points, irregular radii), slammed in with a scale 1.4 → 1 spring and a 2 to 4 degree wobble.
+- Speech-bubble panels for the coach's hints (“Wink when the ring closes”) with an angled tail.
+- Transitions: diagonal slash wipes between screens (a skewed ink band sweeps across in 0.22 s, content snaps in
+  behind it), staggered slab entrances 0.04 s apart.
+- Menus: a vertical stack of tilted command slabs; the focused one grows, shifts right 12 pt and flips to the accent
+  fill. Selection pops with the shared spring.
+- Results: rank letter stamped huge, score counting up, grade counts on stepped slabs, a slash cut-in band.
+
+**Palette (daylight, agreed decision 2)**
+- Cream paper `#FBF4E2` for slabs, ink `#1D1A17` for borders, text and shadows, one hot accent per screen from
+  energy `#FF8A1E`, gold `#E8A838`, sky `#388EE8` or emerald `#47A851`. Define them once as statics in
+  `WinkBeatPalette`. Left eye sky, right eye emerald, Perfect gold, Miss ink.
+- Backgrounds come from the Metal stage (bright sky world), never a flat dark fill.
+
+**What we do not copy (Persona and others)**
+- Not the red, black and white scheme as the main look; not ransom-note letters cut from magazines; not star or
+  tile patterns, calling cards, masks, top hats or any character, logo, font, icon or menu layout from those games
+  (for example the battle command wheel). Not the names of any of their screens.
+- No AI-slop tells: no purple or blue gradients, no glassmorphism blur cards, no neon glow, no emoji as icons,
+  no evenly spaced rounded cards in a grid, no centred hero text on a gradient.
+
+**Motion**
+- One shared spring, `static let snap = Animation.spring(response: 0.28, dampingFraction: 0.72)`, for panels, stamps
+  and selections; slams use response 0.22.
+- Safety: flashes under 3 per second and never full screen; respect `accessibilityReduceMotion` (swap slams and
+  wipes for fades, stop wobbles). Text contrast at least 4.5:1. The audience includes children in a rehab pilot.
 - All visible text through `L("…")` (Russian key, `Resources/strings.json`, RU/KK/EN). `LocalizerTests`
   fails on unlisted strings.
 
