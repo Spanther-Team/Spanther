@@ -17,6 +17,10 @@ struct MenuView: View {
     @State private var winkTestAsked = false
     /// The sync check was asked for in the settings: it opens once their sheet has closed.
     @State private var syncCheckAsked = false
+    @State private var showProfiles = false
+    /// A player picked or added on the players' sheet: their calibration comes once the sheet has closed.
+    @State private var pendingPick: UUID?
+    @State private var pendingAdd: (name: String, avatar: Int)?
 
     var body: some View {
         // The smallest screens (iPhone SE, 4.7") cannot fit the whole menu with a warning on it: there it
@@ -50,6 +54,19 @@ struct MenuView: View {
                 showSettings = false
             })
             .environmentObject(app)
+        }
+        .sheet(isPresented: $showProfiles, onDismiss: {
+            if let id = pendingPick {
+                pendingPick = nil
+                app.pick(profile: id)
+            }
+            if let new = pendingAdd {
+                pendingAdd = nil
+                app.addProfile(name: new.name, avatar: new.avatar)
+            }
+        }) {
+            ProfilesSheet(profiles: app.profiles, clinic: app.clinic,
+                          onPick: { pendingPick = $0 }, onAdd: { pendingAdd = (name: $0, avatar: $1) })
         }
         .onAppear {
             // After a play ends: the sheet waits for the menu to be on screen.
@@ -114,18 +131,26 @@ struct MenuView: View {
             }
             // The name keeps its whole width; the sessions button takes what is left.
             .layoutPriority(1)
-            // A new calibration, and the child's sessions with the code they are saved under; just the icons where
-            // the row is narrow.
+            // Who plays, a new calibration, and the child's sessions with the code they are saved under; just the
+            // icons where the row is narrow.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
+                    profileChip(withName: true)
                     calibrationButton(withTitle: true)
                     sessionsButton(withTitle: true)
                 }
                 HStack(spacing: 12) {
+                    profileChip(withName: true)
                     calibrationButton(withTitle: false)
                     sessionsButton(withTitle: true)
                 }
                 HStack(spacing: 12) {
+                    profileChip(withName: true)
+                    calibrationButton(withTitle: false)
+                    sessionsButton(withTitle: false)
+                }
+                HStack(spacing: 12) {
+                    profileChip(withName: false)
                     calibrationButton(withTitle: false)
                     sessionsButton(withTitle: false)
                 }
@@ -176,22 +201,33 @@ struct MenuView: View {
         .accessibilityValue(startGate.language.name)
     }
 
+    /// Who plays now: the player's badge, or the clinic child's code. Opens the players.
+    private func profileChip(withName: Bool) -> some View {
+        ProfileChip(profiles: app.profiles, clinic: app.clinic, withName: withName) { showProfiles = true }
+    }
+
+    /// Why play offers a new calibration (`AppModel.calibrationAdvice`), for the calibration's intro.
+    private var adviceReason: CalibrationPolicy.Reason? {
+        app.calibrationAdvice.map { $0 == .otherGrip ? .otherGrip : .poorAccuracy }
+    }
+
     /// A new calibration for the session, when the player sits or holds the phone differently. Every mode plays on
-    /// the session's one calibration (`AppModel.calibration`); without one it says so in vermilion. Hidden where the
-    /// iPhone cannot track a face.
+    /// the session's one calibration (`AppModel.calibration`); without one, or when play found it no longer fits,
+    /// it says so in vermilion. Hidden where the iPhone cannot track a face.
     @ViewBuilder private func calibrationButton(withTitle: Bool) -> some View {
         if app.eyeTrackingSupported {
             let has = app.calibration != nil
-            Button { app.beginCalibration(then: .menu) } label: {
+            let fits = has && app.calibrationAdvice == nil
+            Button { app.beginCalibration(then: .menu, reason: adviceReason) } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "scope")
                     if withTitle { Text(has ? L("Перекалибровать") : L("Откалибровать")).lineLimit(1) }
                 }
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(has ? Atlas.ink : Atlas.vermilion)
+                .foregroundStyle(fits ? Atlas.ink : Atlas.vermilion)
                 .padding(.horizontal, 12)
                 .frame(minWidth: 44, minHeight: 44)
-                .atlasChip(border: has ? Atlas.ink : Atlas.vermilion)
+                .atlasChip(border: fits ? Atlas.ink : Atlas.vermilion)
                 .fixedSize()
             }
             .accessibilityLabel(has ? L("Перекалибровать") : L("Откалибровать"))
@@ -299,6 +335,33 @@ struct MenuView: View {
 
     /// A refused camera never gets this far: the start screen keeps the menu locked until it is allowed.
     @ViewBuilder private var warnings: some View {
+        // Play found that the player's calibration no longer fits: the next one is a tap away.
+        if app.eyeTrackingSupported, let why = app.calibrationAdvice {
+            HStack(spacing: 12) {
+                Image(systemName: "scope")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Atlas.vermilion)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Нужна новая калибровка"))
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Atlas.ink)
+                    Text(why == .otherGrip
+                         ? L("Телефон держат дальше или ближе, чем при калибровке.")
+                         : L("В игре взгляд стал читаться хуже, чем после калибровки."))
+                        .font(Atlas.caption)
+                        .foregroundStyle(Atlas.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button { app.beginCalibration(then: .menu, reason: adviceReason) } label: { Text(L("Откалибровать")) }
+                    .buttonStyle(AtlasPrimaryButton())
+                    .frame(width: 190)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(InkSlab(shape: RoundedRectangle(cornerRadius: 14), fill: Atlas.cream, depth: 3))
+        }
         if !app.eyeTrackingSupported {
             Text(L("Этот iPhone не поддерживает отслеживание лица (нужен TrueDepth или чип A12 и новее). Доступна игра пальцем."))
                 .font(Atlas.caption)

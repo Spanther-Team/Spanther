@@ -178,6 +178,99 @@ if let start = rows.first(where: { $0.kind == "rhythm_start" }),
     print("")
 }
 
+// Wink Beat plays: the `winkbeat_frame` rows (the aim the app had, both lids) replayed through WinkBeatEyes, the
+// gaze lock and the judge of every difficulty, from each `rhythm_start` (track zero, less the audio latency, as
+// WinkBeatClock places it) to its `rhythm_end`. First the closures the eyes found over all the frames: winks,
+// blinks, and closures too shallow for the detector (one eye or both past 0.35 but none at its close level).
+let wbFrames = rows.filter { $0.kind == "winkbeat_frame" }
+if !wbFrames.isEmpty {
+    let mapURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("SpantherGaze/Resources/winkbeat-198.json")
+    let span = (wbFrames.last!.time - wbFrames.first!.time) / 60
+    print("Wink Beat frames: \(wbFrames.count) over \(String(format: "%.1f", span)) min.")
+    for (name, config) in [("Hard", WinkBeatEyesConfig(blinksPlay: false).wink),
+                           ("where blinks play", WinkBeatEyesConfig(blinksPlay: true).wink)] {
+        var detector = WinkDetector(config)
+        var found: [WinkSide: Int] = [:]
+        var shallow: [(time: Double, peakL: Double, peakR: Double)] = []
+        var episode: (start: Double, peakL: Double, peakR: Double, decided: Bool)?
+        var lastTime: Double?
+        for r in wbFrames {
+            guard let l = r.d("blink_l"), let rr = r.d("blink_r") else { continue }
+            if let last = lastTime, r.time - last > 0.3 { detector.faceLost(); episode = nil }
+            lastTime = r.time
+            if max(l, rr) >= 0.35 {
+                if episode == nil { episode = (r.time, l, rr, false) }
+                episode!.peakL = max(episode!.peakL, l)
+                episode!.peakR = max(episode!.peakR, rr)
+            } else if let e = episode {
+                if !e.decided { shallow.append((e.start, e.peakL, e.peakR)) }
+                episode = nil
+            }
+            if let e = detector.update(time: r.time, left: l, right: rr) {
+                found[e.side, default: 0] += 1
+                episode?.decided = true
+            }
+        }
+        print("Close level \(config.closeThreshold) (\(name)): \(found[.both] ?? 0) blinks, \(found[.left] ?? 0) left and "
+              + "\(found[.right] ?? 0) right winks; \(shallow.count) closures past 0.35 stayed under it"
+              + (shallow.isEmpty ? "." : ":"))
+        for s in shallow.prefix(10) {
+            print(String(format: "  %.2f s: peak left %.2f, right %.2f", s.time - wbFrames.first!.time, s.peakL, s.peakR))
+        }
+    }
+    let checks = rows.filter { $0.kind == "check" }.compactMap { r -> Double? in
+        guard let t = target(r), let x = r.d("gaze_x_pt"), let y = r.d("gaze_y_pt") else { return nil }
+        return Vec2(x, y).distance(to: t)
+    }
+    let error = checks.isEmpty ? 0 : checks.reduce(0, +) / Double(checks.count)
+    let floor = rows.compactMap { $0.d("zone_floor_pt") }.last ?? 0
+    if let map = try? WinkBeatMap.load(from: Data(contentsOf: mapURL)) {
+        let starts = rows.filter { $0.kind == "rhythm_start" && ($0.cells["rhythm_level"] ?? "").hasPrefix("winkbeat-") }
+        for (n, start) in starts.enumerated() {
+            let end = rows.first { $0.kind == "rhythm_end" && $0.time > start.time }?.time ?? wbFrames.last!.time
+            let zero = start.time + (start.d("audio_latency_s") ?? 0)
+            let frames = wbFrames.filter { $0.time >= start.time - 3 && $0.time <= end }
+            print("Run \(n + 1) (\(start.cells["rhythm_level"] ?? ""), \(String(format: "%.1f", end - start.time)) s played), "
+                  + "check error \(Int(error)) pt, zone floor \(Int(floor)) pt, iPhone 13 field 844 x 390 pt:")
+            for d in WinkBeatDifficulty.allCases {
+                var play = WinkBeatPlay(map: map, difficulty: d, field: WinkBeatField(width: 844, height: 390),
+                                        measuredErrorPt: error, zoneFloorPt: floor, assistPt: 2.8 * 60.4)
+                var eyes = WinkBeatEyes(config: WinkBeatEyesConfig(blinksPlay: d.blinksPlay))
+                var lock = GazeLock()
+                var reasons: [String: Int] = [:]
+                var closures = 0
+                func count(_ events: [WinkBeatEvent]) {
+                    for e in events { if case let .rejected(_, reason) = e { reasons["\(reason)", default: 0] += 1 } }
+                }
+                for r in frames {
+                    var aim: Vec2?
+                    if let x = r.d("gaze_x_pt"), let y = r.d("gaze_y_pt") { aim = Vec2(x, y) }
+                    guard let l = r.d("blink_l"), let rr = r.d("blink_r") else { eyes.faceLost(); continue }
+                    let seen = eyes.update(time: r.time, aim: aim, left: l, right: rr)
+                    let t = r.time - zero
+                    guard t > -2 else { continue }
+                    let locked = lock.update(aim: play.onField(seen.aim), time: r.time, targets: play.lockTargets(at: t))
+                    for c in seen.closures {
+                        guard var j = c.forJudge else { continue }
+                        closures += 1
+                        j.time -= zero
+                        count(play.closure(j, prefer: locked))
+                    }
+                    count(play.frame(time: t, aim: seen.aim))
+                }
+                let judged = play.results.compactMap { $0 }
+                let hits = judged.filter { $0 != .miss }.count
+                let why = reasons.sorted { $0.key < $1.key }.map { "\($0.value) \($0.key)" }.joined(separator: ", ")
+                print("  \(d.rawValue): \(hits) of \(judged.count) objects hit, \(closures) closures sent to the judge"
+                      + (why.isEmpty ? "" : ", rejected: \(why)") + (play.failed ? ", failed" : ""))
+            }
+        }
+    }
+    print("")
+}
+
 let attempts = calibrationAttempts(rows)
 let used = attempts.filter { $0.rows.count >= 20 }
 let checkRows = rows.filter { $0.kind == "check" }

@@ -21,8 +21,17 @@ public struct WinkBeatEyesConfig: Equatable, Sendable {
     /// Blinks play (`WinkBeatDifficulty.blinksPlay`): a two-eye closure is sent as `beatBlink` as soon as the
     /// detector has decided it, and no long blink or ordinary blink follows it.
     public var blinksPlay = false
+    /// The close level where blinks play. A quick blink often closes the lids only part way in ARKit's reading:
+    /// in Aziz's Wink Beat CSV of 2026-11-26, 7 of 42 lid closures peaked at 0.46 to 0.58 against an open level
+    /// near 0.05 and did nothing at 0.6 (none more were found below 0.45, nor on looks at the screen's bottom). Where blinks play any closure plays, so the lower level costs
+    /// no wink; Hard keeps 0.6, where the other eye squinting along a wink must not turn it into a blink. The
+    /// open level + `closeRise` still decides for a face whose open eyes read high.
+    public static let blinkCloseThreshold = 0.45
     public init() {}
-    public init(blinksPlay: Bool) { self.blinksPlay = blinksPlay }
+    public init(blinksPlay: Bool) {
+        self.blinksPlay = blinksPlay
+        if blinksPlay { wink.closeThreshold = Self.blinkCloseThreshold }
+    }
 }
 
 public struct WinkBeatEyes: Sendable {

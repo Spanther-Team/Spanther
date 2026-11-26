@@ -84,7 +84,9 @@ enum WinkBeatText {
         case .winkLeft: return (L("Левый глаз"), L("подмигивание"))
         case .winkRight: return (L("Правый глаз"), L("подмигивание"))
         case .longBlink: return (L("Долгое моргание"), L("засчитано"))
-        case .beatBlink: return (L("Моргание"), L("считается"))
+        case .beatBlink: return (L("Моргание"), L("засчитано"))
+        case .blinkOffTarget: return (L("Моргание мимо"), L("смотри на круг"))
+        case .blinkOffBeat: return (L("Моргание"), L("не в такт"))
         case .noFace: return (L("Лицо не видно"), L("посмотри на экран"))
         }
     }
@@ -641,7 +643,7 @@ struct WinkBeatHUD: View {
                 .accessibilityLabel(L("Стоп"))
                 let e = WinkBeatText.eyes(h.eyes)
                 HStack(spacing: 9) {
-                    ([.blink, .longBlink, .beatBlink].contains(h.eyes) ? EyeGlyph.shut : EyeGlyph.open)
+                    (h.eyes.shut ? EyeGlyph.shut : EyeGlyph.open)
                         .with(color: Atlas.cream)
                         .frame(width: 40 * s, height: 20 * s)
                     VStack(alignment: .leading, spacing: 1) {

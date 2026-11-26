@@ -39,7 +39,11 @@ struct CalibrationView: View {
                         .fixedSize()
                         .position(x: size.x * 0.7, y: size.y - 40)
                 } else {
-                    intro.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The smallest screens scroll the intro rather than clip it.
+                    ViewThatFits(in: .vertical) {
+                        intro.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        ScrollView { intro.frame(maxWidth: .infinity) }
+                    }
                 }
             }
             .task(id: started) {
@@ -50,14 +54,43 @@ struct CalibrationView: View {
         .ignoresSafeArea()
     }
 
+    /// The player this calibration is kept for. A clinic child keeps the clinic's own rules and is not named here.
+    private var player: PlayerProfile? { app.clinic.playingID == nil ? app.profiles.active : nil }
+
+    /// Why the player's kept calibration does not play, or that it is their first.
+    private func reasonLine(_ p: PlayerProfile) -> String? {
+        switch app.calibrationReason {
+        case .old: return L("Прошла неделя с прошлой калибровки")
+        case .otherScreen: return L("Экран другого размера")
+        case .nightVision: return L("Ночное зрение переключено")
+        case .newTracking: return L("Игра теперь читает взгляд по-новому")
+        case .poorAccuracy: return L("В игре точность упала")
+        case .otherGrip: return L("Телефон держат на другом расстоянии")
+        case .noModel: return L("Прошлую калибровку не прочитать")
+        case nil: return app.profiles.calibrations[p.id] == nil ? L("Первая калибровка") : nil
+        }
+    }
+
     private var intro: some View {
         VStack(spacing: 14) {
+            if kind == .calibration, let p = player {
+                HStack(spacing: 8) {
+                    AvatarDot(avatar: p.avatar, initial: ProfilesModel.initial(p), size: 28)
+                    Text(ProfilesModel.name(p)).font(.system(size: 15, weight: .heavy)).foregroundStyle(Atlas.ink)
+                    if let why = reasonLine(p) {
+                        Text(why).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
             Text(kind == .calibration ? L("Научим игру твоим глазам") : L("Проверка точности"))
                 .font(Atlas.display(28))
                 .foregroundStyle(Atlas.ink)
-            Text(kind == .calibration
+            Text(kind == .check
+                 ? L("Ещё 13 точек в новых местах. По ним игра узнает, насколько точно видит твой взгляд.")
+                 : player == nil
                  ? L("Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать. Калибровка одна на всё занятие.")
-                 : L("Ещё 13 точек в новых местах. По ним игра узнает, насколько точно видит твой взгляд."))
+                 : L("Держи телефон двумя руками примерно в 30 см от лица, камерой слева, и не закрывай её пальцем. Смотри на каждую точку, пока вокруг неё бежит кружок. Голову можно чуть-чуть поворачивать. Игра запомнит калибровку для этого игрока: новая понадобится через неделю или если точность упадёт."))
                 .font(Atlas.body)
                 .multilineTextAlignment(.center).foregroundStyle(Atlas.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
