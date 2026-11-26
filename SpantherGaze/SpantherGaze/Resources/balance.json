@@ -14,6 +14,7 @@
   "maxOnScreen": [2, 3],
   "maxOnScreenIfErrorAbovePt": { "errorPt": 60, "max": 2 },
   "levelLengthSec": 45,
+  "levelTimeLimitSec": 120,
   "earthShields": 5,
 
   "levels": 10,

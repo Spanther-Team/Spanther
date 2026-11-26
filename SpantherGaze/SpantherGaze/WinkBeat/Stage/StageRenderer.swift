@@ -158,7 +158,7 @@ struct StagePainter {
             let o = play.objects[i]
             let progress = WinkBeatLook.approach(t, objectTime: o.time, lead: lead)
             let alpha = WinkBeatLook.fadeIn(progress)
-            let col = StageColor.side(o.side)
+            let col = StageColor.side(play.side(i))
             switch o.kind {
             case .circle:
                 guard waiting.contains(i) else { continue }

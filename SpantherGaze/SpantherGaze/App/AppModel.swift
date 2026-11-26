@@ -255,7 +255,17 @@ final class AppModel: ObservableObject {
               let cfg = try? BalanceConfig.load(from: data) else {
             fatalError("balance.json is missing or invalid")
         }
+        #if DEBUG
+        // CI plays a minute of meteors and checks that level 1 ended: `-SpantherLevelSec 40` shortens timed levels.
+        var tuned = cfg
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-SpantherLevelSec"), i + 1 < args.count, let sec = Double(args[i + 1]) {
+            tuned.levelTimeLimitSec = sec
+        }
+        balance = tuned
+        #else
         balance = cfg
+        #endif
         rhythmTracks = Bundle.main.url(forResource: "tracks", withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? RhythmTrack.load(from: $0) } ?? []
@@ -756,8 +766,9 @@ final class AppModel: ObservableObject {
     // MARK: Wink Beat
 
     /// Opens Wink Beat's difficulty choice. By eye it needs the session's calibration first.
-    func openWinkBeat() {
-        let byEye = eyeTrackingSupported
+    /// Opens Wink Beat by eye where the phone tracks faces, else (or with `byEye: false`) by finger.
+    func openWinkBeat(byEye wanted: Bool = true) {
+        let byEye = wanted && eyeTrackingSupported
         mode = byEye ? .eyes : .touch
         if byEye, model == nil {
             beginCalibration(then: .winkBeat)
@@ -780,9 +791,10 @@ final class AppModel: ObservableObject {
             .flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? WinkBeatMap.load(from: $0) }
         let bot = autoplay == "winkbeat"
+        // The lock assist reaches 2.8 cm: the aim sat about 1.6 cm off on Aziz's first runs (2026-11-26).
         let w = WinkBeatSession(map: map, byEye: byEye, bot: bot,
                                 measuredErrorPt: byEye && !bot ? report?.meanErrorPt ?? 0 : 0,
-                                zoneFloorPt: byEye && !bot ? zoneFloorPt : 0)
+                                zoneFloorPt: byEye && !bot ? zoneFloorPt : 0, assistPt: 2.8 * ptPerCm)
         let teach = byEye && !bot
         w.onStart = { [weak self] target, host in
             // The start disc was winked at: the player looked at it, so the aim is recentred on it.

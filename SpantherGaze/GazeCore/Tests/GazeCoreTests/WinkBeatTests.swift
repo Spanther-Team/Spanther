@@ -107,13 +107,16 @@ final class WinkBeatTests: XCTestCase {
         var late = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5)])
         XCTAssertEqual(late.closure(WinkBeatClosure(side: .left, time: 2.3, aim: spot)), [])
         XCTAssertEqual(late.stray, 1)
+        // The miss waits for a closure the detector has not decided yet.
         late.frame(time: 2.3, aim: spot)
+        XCTAssertNil(late.results[0])
+        late.frame(time: 2.35, aim: spot)
         XCTAssertEqual(late.results[0], .miss)
     }
 
     func testAimOffTheObjectDoesNotUseItUp() {
         var p = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5)])
-        let far = p.positions[0] + Vec2(p.rules.zonePt + 5, 0)
+        let far = p.positions[0] + Vec2(p.rules.reachPt + 5, 0)
         XCTAssertEqual(p.closure(WinkBeatClosure(side: .left, time: 2, aim: far)), [.rejected(index: 0, reason: .offTarget)])
         XCTAssertNil(p.results[0])
         p.closure(WinkBeatClosure(side: .left, time: 2.05, aim: p.positions[0]))
@@ -121,20 +124,58 @@ final class WinkBeatTests: XCTestCase {
     }
 
     func testEyeRules() {
-        var p = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5, side: .left)])
+        // Hard: the object's eye only, and a blink never plays.
+        var p = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5, side: .left)], .hard)
         XCTAssertEqual(p.closure(WinkBeatClosure(side: .right, time: 2, aim: p.positions[0])),
                        [.rejected(index: 0, reason: .wrongEye)])
         XCTAssertEqual(p.closure(WinkBeatClosure(side: .both, time: 2, aim: p.positions[0])),
                        [.rejected(index: 0, reason: .blink)])
         p.closure(WinkBeatClosure(side: .left, time: 2, aim: p.positions[0]))
         XCTAssertEqual(p.results[0], .perfect)
-        // A long blink plays `any` objects on easy only.
-        var easy = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5)], .easy)
-        easy.closure(WinkBeatClosure(side: .both, time: 2, aim: easy.positions[0]))
-        XCTAssertEqual(easy.results[0], .perfect)
-        var normal = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5)], .normal)
-        normal.closure(WinkBeatClosure(side: .both, time: 2, aim: normal.positions[0]))
-        XCTAssertNil(normal.results[0])
+        XCTAssertEqual(p.side(0), .left)
+        var anyHard = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5)], .hard)
+        anyHard.closure(WinkBeatClosure(side: .both, time: 2, aim: anyHard.positions[0]))
+        XCTAssertNil(anyHard.results[0])
+        // Easy and Normal: a blink of both eyes or either eye plays any object, whatever eye it shows.
+        for d in [WinkBeatDifficulty.easy, .normal] {
+            for side in [WinkSide.both, .right] {
+                var q = play([WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.5, side: .left)], d)
+                XCTAssertEqual(q.side(0), .any, "\(d)")
+                q.closure(WinkBeatClosure(side: side, time: 2, aim: q.positions[0]))
+                XCTAssertEqual(q.results[0], .perfect, "\(d) \(side)")
+                XCTAssertEqual(q.blinks, side == .both ? 1 : 0)
+            }
+        }
+    }
+
+    /// Aziz's first phone runs (2026-11-26): the aim sat about 100 pt above the circles and past the top edge.
+    /// Below Hard only the object due next locks, from `assistPt`, an aim past the edge counts as on it, and the
+    /// lock plays the object whatever the aim does during the closure.
+    func testLockAssistTakesTheObjectDueFromFarAndPastTheEdge() {
+        let objects = [WinkBeatObject(kind: .circle, time: 2, x: 0.3, y: 0.1),
+                       WinkBeatObject(kind: .circle, time: 2.5, x: 0.7, y: 0.1)]
+        var p = play(objects, .normal)
+        let targets = p.lockTargets(at: 2.0)
+        XCTAssertEqual(targets.map(\.id), [0], "only the object due next")
+        XCTAssertEqual(targets.first?.reach ?? 0, 170, accuracy: 1e-9)
+        // 120 pt above the top edge: on the edge, 39 pt from the circle.
+        let above = Vec2(p.positions[0].x, -120)
+        XCTAssertEqual(p.onField(above), Vec2(p.positions[0].x, 0))
+        XCTAssertEqual(p.onField(Vec2(p.positions[0].x, -400)), Vec2(p.positions[0].x, -400), "further out: a look away")
+        var lock = GazeLock()
+        XCTAssertEqual(lock.update(aim: p.onField(above), time: 1.9, targets: targets), 0)
+        // The lock plays it even with the aim thrown off by the squeeze of the lids.
+        p.closure(WinkBeatClosure(side: .both, time: 2.02, aim: Vec2(800, 380)), prefer: 0)
+        XCTAssertEqual(p.results[0], .perfect)
+        XCTAssertEqual(p.lockTargets(at: 2.3).map(\.id), [1])
+        // Hard keeps the plain zone and every object in its lead time; a look past the edge counts as on the edge
+        // there too, since that is the tracker's error, not the player's.
+        var hard = play(objects, .hard)
+        XCTAssertEqual(hard.lockTargets(at: 2.0).map(\.id), [0, 1])
+        XCTAssertEqual(hard.closure(WinkBeatClosure(side: .left, time: 2.0, aim: hard.positions[0] + Vec2(150, 0))),
+                       [.rejected(index: 0, reason: .offTarget)])
+        hard.closure(WinkBeatClosure(side: .left, time: 2.02, aim: above))
+        XCTAssertEqual(hard.results[0], .perfect)
     }
 
     func testLockedObjectWinsOverAnEarlierOne() {
@@ -195,19 +236,24 @@ final class WinkBeatTests: XCTestCase {
     }
 
     func testEnergyFailsOnNormalButNotOnEasy() {
-        let objects: [WinkBeatObject] = (0..<12).map { (i: Int) -> WinkBeatObject in
+        let objects: [WinkBeatObject] = (0..<40).map { (i: Int) -> WinkBeatObject in
             let x: Double = i % 2 == 0 ? 0.2 : 0.8
             return WinkBeatObject(kind: .circle, time: 1 + Double(i) * 1.2, x: x, y: 0.5)
         }
         var normal = play(objects, .normal)
         var easy = play(objects, .easy)
         var failedAt: Double?
-        for f in 0..<(60 * 16) {
+        var lowest = 1.0
+        for f in 0..<(60 * 50) {
             let t = Double(f) / 60
             if normal.frame(time: t, aim: nil).contains(.failed) { failedAt = t }
+            if t < 31 { lowest = min(lowest, normal.energy) }
             easy.frame(time: t, aim: nil)
         }
-        XCTAssertNotNil(failedAt)
+        // Every object missed: the bar stops at its floor for the first 30 s after the first object, then empties.
+        XCTAssertEqual(lowest, normal.rules.noFailFloor, accuracy: 1e-9)
+        XCTAssertGreaterThan(failedAt ?? 0, 31)
+        XCTAssertLessThan(failedAt ?? 99, 36)
         XCTAssertTrue(normal.failed)
         XCTAssertFalse(easy.failed)
         XCTAssertTrue(easy.finished)
@@ -260,6 +306,25 @@ final class WinkBeatTests: XCTestCase {
         XCTAssertTrue(heldAims.allSatisfy { $0 == Vec2(100, 100) }, "aim held through the blink and the settle time")
     }
 
+    /// Where blinks play, an ordinary blink is sent the moment the detector decides it, with the aim from before
+    /// it, and nothing more follows it (no long blink, no log-only blink).
+    func testBeatBlinkIsSentAtOnceWhereBlinksPlay() {
+        var eyes = WinkBeatEyes(config: WinkBeatEyesConfig(blinksPlay: true))
+        var out: [(time: Double, closure: WinkBeatEyes.Closure)] = []
+        for f in 0..<120 {
+            let t = Double(f) / 60
+            let closed = t >= 1.0 && t < 1.5
+            let raw = closed ? Vec2(100, 300) : Vec2(100, 100)
+            for c in eyes.update(time: t, aim: raw, left: closed ? 0.9 : 0.1, right: closed ? 0.9 : 0.1).closures {
+                out.append((t, c))
+            }
+        }
+        XCTAssertEqual(out.count, 1, "\(out)")
+        XCTAssertEqual(out.first?.closure, .beatBlink(onset: 1.0, aim: Vec2(100, 100)))
+        XCTAssertLessThanOrEqual(out.first?.time ?? 9, 1.1, "sent once decided, not when the eyes open")
+        XCTAssertEqual(out.first?.closure.forJudge, WinkBeatClosure(side: .both, time: 1.0, aim: Vec2(100, 100)))
+    }
+
     func testAWinkIsJudgedWithTheAimFromBeforeTheLidCameDown() {
         var eyes = WinkBeatEyes()
         var wink: WinkBeatClosure?
@@ -304,8 +369,8 @@ final class WinkBeatTests: XCTestCase {
     }
 
     /// A realistic player: aim scatter, a calibration bias, late and uneven winks, natural blinks every few
-    /// seconds, and the aim sliding 60 pt whenever a lid is down. Blinks must never play objects, and the level
-    /// stays clearly winnable.
+    /// seconds, and the aim sliding 60 pt whenever a lid is down. The level stays clearly winnable, and on Hard
+    /// blinks never play objects.
     func testRealisticBotWinsAndBlinksNeverHit() throws {
         let map = try bundledMap()
         for (d, minAccuracy) in [(WinkBeatDifficulty.easy, 0.8), (.normal, 0.75), (.hard, 0.7)] {
@@ -316,21 +381,22 @@ final class WinkBeatTests: XCTestCase {
             XCTAssertFalse(p.failed, "\(d)")
             XCTAssertGreaterThan(run.blinks, 8, "\(d): the bot blinked")
             print("WinkBeat realistic \(d): accuracy \(p.accuracy) rank \(p.rank) grades \(WinkBeatGrade.allCases.map { p.count($0) }) blinks \(run.blinks) offTarget \(p.offTarget) energy \(p.energy)")
-            XCTAssertFalse(p.playedBy.contains(.both), "\(d): no blink played an object")
+            if !d.blinksPlay { XCTAssertFalse(p.playedBy.contains(.both), "\(d): no blink played an object") }
             XCTAssertGreaterThanOrEqual(p.accuracy, minAccuracy,
                                         "\(d): \(WinkBeatGrade.allCases.map { p.count($0) }) offTarget \(p.offTarget)")
         }
     }
 
-    func testOnlyBlinkingPlaysNothing() throws {
+    func testOnlyBlinkingPlaysNothingOnHard() throws {
         let map = try bundledMap()
         var style = WinkBeatBot.Style()
         style.blinksOnly = true; style.blinkEverySec = 1.5
-        let p = WinkBeatBot.run(WinkBeatPlay(map: map, difficulty: .normal, field: field), style: style).play
+        let p = WinkBeatBot.run(WinkBeatPlay(map: map, difficulty: .hard, field: field), style: style).play
         XCTAssertTrue(p.playedBy.allSatisfy { $0 == nil })
-        // Nothing but misses, until the energy bar empties and the track fails.
+        // Every circle missed (a slider can still be followed by eye), until the energy bar empties after the
+        // first half minute and the track fails.
         XCTAssertTrue(p.failed)
-        for (i, o) in map.chart(.normal).enumerated() where o.needsWink {
+        for (i, o) in map.chart(.hard).enumerated() where o.kind == .circle {
             XCTAssertTrue(p.results[i] == nil || p.results[i] == .miss, "#\(i)")
         }
     }
@@ -341,6 +407,25 @@ final class WinkBeatTests: XCTestCase {
         style.longBlinks = true; style.aimNoisePt = 20
         let p = WinkBeatBot.run(WinkBeatPlay(map: map, difficulty: .easy, field: field, measuredErrorPt: 35), style: style).play
         XCTAssertGreaterThanOrEqual(p.accuracy, 0.8, "\(WinkBeatGrade.allCases.map { p.count($0) })")
-        XCTAssertGreaterThan(p.longBlinks, 40)
+        XCTAssertGreaterThan(p.blinks, 40)
+    }
+
+    /// Aziz's first phone runs, as a bot: he blinks with both eyes on the beat, and the tracked aim sits 100 pt
+    /// above the circles. Normal is now clearly playable and never ends in the first half minute; Hard keeps its
+    /// winks-only rules, so the same play ends there.
+    func testBothEyeBlinkerWithAHighAimPlaysNormal() throws {
+        let map = try bundledMap()
+        var style = WinkBeatBot.Style()
+        style.beatBlinks = true; style.aimBias = Vec2(0, -100); style.aimNoisePt = 25
+        style.latencyJitterSec = 0.06; style.seed = 5
+        let normal = WinkBeatBot.run(WinkBeatPlay(map: map, difficulty: .normal, field: field, measuredErrorPt: 35),
+                                     style: style).play
+        print("WinkBeat both-eye blinker normal: accuracy \(normal.accuracy) grades \(WinkBeatGrade.allCases.map { normal.count($0) }) blinks \(normal.blinks) energy \(normal.energy)")
+        XCTAssertFalse(normal.failed)
+        XCTAssertGreaterThanOrEqual(normal.accuracy, 0.75, "\(WinkBeatGrade.allCases.map { normal.count($0) })")
+        let hard = WinkBeatBot.run(WinkBeatPlay(map: map, difficulty: .hard, field: field, measuredErrorPt: 35),
+                                   style: style).play
+        XCTAssertTrue(hard.failed)
+        XCTAssertFalse(hard.playedBy.contains(.both))
     }
 }

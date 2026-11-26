@@ -95,6 +95,16 @@ private struct HUDView: View {
                         .accessibilityLabel(L("Щиты: {0} из 5", hud.shields))
                     }
                     pill { Text(L("Уровень {0}", hud.level)).font(.system(size: 15, weight: .heavy, design: .rounded)).rolling(hud.level) }
+                    if let left = hud.secondsLeft {
+                        // Time left in the level: when it runs out, the level is won.
+                        pill {
+                            Label(String(format: "%d:%02d", left / 60, left % 60), systemImage: "timer")
+                                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(L("До конца уровня {0} с", left))
+                    }
                     if decoysOn {
                         // The count of looks at red signs: the sign itself and a number, no word and no alarm.
                         pill {

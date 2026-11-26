@@ -2,7 +2,8 @@ import Foundation
 
 // Wink Beat's eyes: turns each tracking frame (aim and lid closure) into a blink-safe aim and the closures that may
 // play objects. Three rules keep blinks harmless:
-// 1. Both eyes closing within the pair window is a blink (`WinkDetector`, 25 ms measured on the phone): never a hit.
+// 1. Both eyes closing within the pair window is a blink (`WinkDetector`, 25 ms measured on the phone). It plays only
+//    where the level lets blinks play (`blinksPlay`, below Hard since 2026-11-26), else it is never a hit.
 // 2. A closure is judged with the aim from `preOnsetSec` before its onset. A wink squeezes the face and the tracked
 //    gaze slides while the lid comes down; that slide never decides which object was played.
 // 3. While any eye is closed, and `settleSec` after both open, the aim holds its last good point, so a blink in the
@@ -17,7 +18,11 @@ public struct WinkBeatEyesConfig: Equatable, Sendable {
     /// A two-eye closure this long is a deliberate long blink (s). Normal blinks close for about 0.1 to 0.2 s.
     /// To be set from a phone CSV.
     public var longBlinkSec = 0.3
+    /// Blinks play (`WinkBeatDifficulty.blinksPlay`): a two-eye closure is sent as `beatBlink` as soon as the
+    /// detector has decided it, and no long blink or ordinary blink follows it.
+    public var blinksPlay = false
     public init() {}
+    public init(blinksPlay: Bool) { self.blinksPlay = blinksPlay }
 }
 
 public struct WinkBeatEyes: Sendable {
@@ -28,6 +33,9 @@ public struct WinkBeatEyes: Sendable {
         case longBlink(onset: Double, aim: Vec2?)
         /// An ordinary blink, sent when the eyes open: never plays anything, kept for the session log.
         case blink(onset: Double, durationSec: Double)
+        /// Both eyes closed where blinks play: sent as soon as the detector has decided it. `aim` from before the
+        /// onset.
+        case beatBlink(onset: Double, aim: Vec2?)
     }
 
     public let config: WinkBeatEyesConfig
@@ -74,7 +82,10 @@ public struct WinkBeatEyes: Sendable {
         var closures: [Closure] = []
         if let e = event {
             if e.side == .both {
-                blink = (e.onset, aim(before: e.onset - config.preOnsetSec), false)
+                let a = aim(before: e.onset - config.preOnsetSec)
+                if config.blinksPlay { closures.append(.beatBlink(onset: e.onset, aim: a)) }
+                // `long` set: this blink is already sent, nothing more follows it.
+                blink = (e.onset, a, config.blinksPlay)
             } else {
                 closures.append(.wink(side: e.side, onset: e.onset, aim: aim(before: e.onset - config.preOnsetSec)))
             }
@@ -111,7 +122,8 @@ extension WinkBeatEyes.Closure {
     public var forJudge: WinkBeatClosure? {
         switch self {
         case let .wink(side, onset, aim): return WinkBeatClosure(side: side, time: onset, aim: aim)
-        case let .longBlink(onset, aim): return WinkBeatClosure(side: .both, time: onset, aim: aim)
+        case let .longBlink(onset, aim), let .beatBlink(onset, aim):
+            return WinkBeatClosure(side: .both, time: onset, aim: aim)
         case .blink: return nil
         }
     }
