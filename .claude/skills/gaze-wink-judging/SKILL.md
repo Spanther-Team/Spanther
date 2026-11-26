@@ -20,22 +20,35 @@ in the Linux tests and in `GazeReplay`. The app feeds it frames and draws what i
   clock; convert frame timestamps to track time before calling them.
 - Positions: the map's 0...1 field through `WinkBeatField` to screen points. The judge never sees 3D coordinates.
 
-## 2. Blinks never hit, never move the aim (WinkBeatEyes)
+## 2. Blinks play below Hard, never move the aim (WinkBeatEyes)
 
+- Since 2026-11-26 (Aziz's first phone CSV: he closes both eyes on the beat, his one-eye winks came out half
+  closed and wrong-eyed, Hard ended every run in 6 s): on Easy and Normal (`WinkBeatDifficulty.blinksPlay`) any
+  closure plays any object, and the eye colours are off (`WinkBeatPlay.side(_:)` is `.any`). The eyes send a
+  two-eye closure as `.beatBlink` the moment the detector decides it (`WinkBeatEyesConfig.blinksPlay`), with the
+  aim from before the onset; nothing follows it. A blink starts the play only with the aim on the start disc.
+  Hard keeps everything below: winks only, eye colours, blinks never hit. Easy and Normal never fail in the first
+  `noFailSec = 30` after the first object (the bar stops at `noFailFloor = 0.2`).
 - Two eyes crossing within the pair window (`WinkConfig.pairWindowSec = 0.025`, measured on Aziz's phone: blinks
-  0–17 ms, the other eye after a wink 33–50 ms) is a blink: `.blink`, never sent to the judge.
+  0–17 ms, the other eye after a wink 33–50 ms) is a blink: on Hard `.blink`, never sent to the judge.
 - A wink is judged with the aim from `preOnsetSec = 0.1` before its onset: the tracked gaze slides while the lid
   comes down. The onset (first eye crossing) is the judged moment even though the side is known later.
 - While any eye is not open, and `settleSec = 0.1` after, the output aim holds the last good point, so a blink in a
   slider or spinner does not count as looking away.
-- Easy only: both eyes held closed `longBlinkSec = 0.3` or more is a `.longBlink` that plays `any` objects, for
-  children who cannot wink. Never remove that path. The judge waits that long before calling misses on easy.
+- Both eyes held closed `longBlinkSec = 0.3` or more is a `.longBlink` (plays `any` objects where the level accepts
+  long blinks and blinks do not already play). A child who cannot wink must always have a way to play Easy:
+  never remove both paths. Misses wait `goodSec + decideSec` (0.08 s, the detector's decision), plus
+  `longBlinkSec` where only long blinks play.
 - Change these numbers only with a phone CSV replayed with `swift run -c release GazeReplay <csv>`, and cite it.
 
 ## 3. Aim, zones and the lock
 
 - No visible reticle in play. `GazeLock` locks the nearest object in reach (`WinkBeatPlay.lockTargets(at:)`); a wink
   plays the locked object when its window holds the wink, else the earliest aimed one.
+- Lock assist below Hard (`lockAssist`): only the object due next can be locked, from `assistPt` (2.8 cm, 170 pt at
+  60 pt/cm), and a closure in its window plays the locked object whatever the aim does during the closure. On every
+  level an aim up to `edgeSlackPt = 160` past the screen edge counts as on the edge (`onField`): the tracked aim
+  overshot the upper circles by about 100 pt on the phone. Hits teach the aim adapter through `onPlayed`.
 - Zone: `WinkBeatRules.make`: difficulty base 90 / 70 / 55 pt plus the calibration's measured error (capped at 90),
   never below the balance floor (calibration miss + 1.5 x spread, `BalanceConfig.zoneFloor`).
 - A wink in a window with the aim off every object uses nothing up (`offTarget`), so the player can still hit it.
@@ -78,5 +91,6 @@ in the Linux tests and in `GazeReplay`. The app feeds it frames and draws what i
 ## Tests and evidence
 
 - Every rule change gets a test in `WinkBeatTests.swift` with fixed samples, and a `WinkBeatBot.run` check when it
-  changes play (the realistic bot must stay ≥ 80 / 75 / 70% on the test level, and no blink may play an object).
+  changes play (the realistic bot must stay ≥ 80 / 75 / 70% on the test level, no blink may play an object on Hard,
+  and the both-eye blinker with the aim 100 pt high must stay ≥ 75% on Normal).
 - Nothing counts as working until Aziz plays it on his phone; ask for the session CSV and replay it.

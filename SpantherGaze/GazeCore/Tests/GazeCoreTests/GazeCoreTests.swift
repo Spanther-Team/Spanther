@@ -322,7 +322,9 @@ final class GameModelTests: XCTestCase {
     }
 
     func testShieldsRunOutRestartsLevelEasier() throws {
-        let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 30, seed: 8)
+        var c = try BalanceTests.config()
+        c.levelTimeLimitSec = nil
+        let m = GameModel(config: c, screen: screen, marginPt: 30, seed: 8)
         var events: [GameEvent] = []
         for _ in 0..<5 {
             var a = m.spawn(className: "S")
@@ -333,6 +335,55 @@ final class GameModelTests: XCTestCase {
         XCTAssertTrue(events.contains { if case .shieldsDepleted = $0 { return true }; return false })
         XCTAssertEqual(m.shields, 5)
         XCTAssertEqual(m.level, 1)
+        XCTAssertEqual(m.levelTime, 0, accuracy: 1e-9, "the level starts over")
+    }
+
+    /// Timed levels (balance.json): empty shields recharge and the level clock runs on to its end.
+    func testShieldsRunOutOnATimedLevelRechargeAndTheClockRunsOn() throws {
+        let c = try BalanceTests.config()
+        XCTAssertEqual(c.levelTimeLimitSec, 120)
+        let m = GameModel(config: c, screen: screen, marginPt: 30, seed: 8)
+        for _ in 0..<(60 * 30) { m.update(dt: 1.0 / 60, gaze: .notLooking) }
+        m.removeAll()
+        let before = m.levelTime
+        var events: [GameEvent] = []
+        for _ in 0..<(c.earthShields + 1) {
+            var a = m.spawn(className: "S")
+            a.position = Vec2(m.earthCenter.x, m.earthTopY + 5); a.velocity = .zero
+            m.insert(a)
+            events += m.update(dt: 1.0 / 60, gaze: .notLooking)
+            if events.contains(where: { if case .shieldsRecharged = $0 { return true }; return false }) { break }
+        }
+        XCTAssertTrue(events.contains { if case .shieldsRecharged(1) = $0 { return true }; return false })
+        XCTAssertFalse(events.contains { if case .shieldsDepleted = $0 { return true }; return false })
+        XCTAssertEqual(m.shields, c.earthShields)
+        XCTAssertEqual(m.level, 1)
+        XCTAssertGreaterThan(m.levelTime, before, "the level goes on")
+        XCTAssertEqual(m.levelTimeLeft ?? 0, 120 - m.levelTime, accuracy: 1e-9)
+    }
+
+    /// Timed levels: at 2:00 the level is won whatever share was burned, with meteors still in the sky.
+    func testTimedLevelIsWonWhenItsTimeIsUp() throws {
+        let c = try BalanceTests.config()
+        let m = GameModel(config: c, screen: screen, marginPt: 30, seed: 11)
+        var ended: (level: Int, ratio: Double, next: Int)?
+        var endedAt = 0.0
+        var t = 0.0
+        // Nobody plays: every meteor reaches Earth, and the shields recharge on the way.
+        while ended == nil, t < 130 {
+            t += 1.0 / 60
+            for e in m.update(dt: 1.0 / 60, gaze: .notLooking) {
+                if case let .levelEnded(level, ratio, next) = e { ended = (level, ratio, next); endedAt = t }
+            }
+        }
+        let e = try XCTUnwrap(ended)
+        XCTAssertEqual(e.level, 1)
+        XCTAssertEqual(e.next, 2)
+        XCTAssertLessThan(e.ratio, 0.2)
+        XCTAssertEqual(endedAt, 120, accuracy: 0.05)
+        XCTAssertEqual(m.level, 2)
+        XCTAssertTrue(m.asteroids.isEmpty, "the sky is cleared for the next level")
+        XCTAssertEqual(m.levelTimeLeft ?? 0, 120, accuracy: 1e-9)
     }
 
     func testLongDropoutPausesGame() throws {
@@ -436,7 +487,7 @@ final class GameModelTests: XCTestCase {
         let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 30, seed: 10)
         var ended: (Int, Double, Int)?
         var t = 0.0
-        while ended == nil && t < 120 {
+        while ended == nil && t < 130 {
             let target = m.asteroids.max { $0.position.y < $1.position.y }
             if m.starved { m.reload() }   // the bot blinks three times as soon as it runs dry
             for e in m.update(dt: 1.0 / 60, gaze: target.map { .point($0.position) } ?? .notLooking) {
@@ -702,16 +753,18 @@ final class EnergyTests: XCTestCase {
     /// game unwinnable. It reloads about twice a level at the start and about five times by level 10. It looks at
     /// the lowest meteor it can burn and leaves the ones still in their bubble (`Asteroid.isShielded`) for later:
     /// a bot that stares at a bubble while another meteor falls ran out of shields on levels 8 to 10 in 5 of 8
-    /// seeds; this one in none.
+    /// seeds; this one in none with 45 s levels. With the 2:00 levels (2026-11-26) it still burns 80% of every
+    /// level, and its shields run out (and recharge) at most once on a late level.
     func testAllLevelsStayWinnableWithRealisticReloads() throws {
         for seed in [1, 2] as [UInt64] {
             let m = GameModel(config: try BalanceTests.config(), screen: screen, marginPt: 45, seed: seed)
             var cleared: [Int: Double] = [:]
+            var recharges: [Int: Int] = [:]
             var reloads: [Int] = []
             var drySince: Double?
             var count = 0
             var t = 0.0
-            while cleared[10] == nil && t < 900 {
+            while cleared[10] == nil && t < 1300 {
                 if m.needsReload {
                     if drySince == nil { drySince = t }
                     if t - (drySince ?? t) >= 1.5 { if m.reload() { count += 1 }; drySince = nil }
@@ -722,11 +775,14 @@ final class EnergyTests: XCTestCase {
                 for e in m.update(dt: 1.0 / 60, gaze: target.map { .point($0.position) } ?? .notLooking) {
                     if case let .levelEnded(level, ratio, _) = e { cleared[level] = ratio; reloads.append(count); count = 0 }
                     if case .shieldsDepleted = e { XCTFail("seed \(seed): shields ran out on level \(m.level)") }
+                    if case let .shieldsRecharged(level) = e { recharges[level, default: 0] += 1 }
                 }
                 t += 1.0 / 60
             }
             for level in 1...10 {
                 XCTAssertGreaterThanOrEqual(cleared[level] ?? 0, 0.8, "seed \(seed) level \(level)")
+                // Two minutes of a late level let five meteors through now and then, never more than once a level.
+                XCTAssertLessThanOrEqual(recharges[level] ?? 0, level >= 7 ? 1 : 0, "seed \(seed) level \(level)")
             }
             XCTAssertGreaterThanOrEqual(reloads.first ?? 0, 1, "the pool should run dry at least once on level 1")
         }

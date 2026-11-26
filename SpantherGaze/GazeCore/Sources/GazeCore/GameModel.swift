@@ -74,6 +74,9 @@ public enum GameEvent: Sendable {
     case destroyed(Asteroid, AsteroidRecord)
     case hitEarth(Asteroid, AsteroidRecord)
     case shieldsDepleted(restartLevel: Int)
+    /// Timed levels: the shields ran out, so they are full again, the sky is cleared, and the level goes on a
+    /// little easier to its end.
+    case shieldsRecharged(level: Int)
     case levelEnded(level: Int, killRatio: Double, nextLevel: Int)
     case pausedForFace(Bool)
     /// A kill spent energy; `left` is what remains.
@@ -111,6 +114,8 @@ public final class GameModel {
     public private(set) var shields: Int
     public private(set) var score = 0
     public private(set) var levelTime = 0.0
+    /// Time left in a timed level (s), nil when levels are not timed.
+    public var levelTimeLeft: Double? { config.levelTimeLimitSec.map { max(0, $0 - levelTime) } }
     public private(set) var destroyedThisLevel = 0
     public private(set) var reachedThisLevel = 0
     public private(set) var pausedForFace = false
@@ -323,8 +328,17 @@ public final class GameModel {
                 }
                 events.append(.hitEarth(a, rec))
                 if shields <= 0 {
-                    // No game over for kids: restart the level a bit easier.
+                    // No game over for kids: restart the level a bit easier, or on a timed level go on with it.
                     d = max(0, config.difficulty(level: level) - config.rules.failEaseStep)
+                    if config.levelTimeLimitSec != nil {
+                        asteroids.removeAll()
+                        shields = config.earthShields
+                        spawnTimer = 1.5
+                        killStreak = 0
+                        recentHits.removeAll()
+                        events.append(.shieldsRecharged(level: level))
+                        return events
+                    }
                     restartLevel()
                     events.append(.shieldsDepleted(restartLevel: level))
                     return events
@@ -337,8 +351,23 @@ public final class GameModel {
 
         updateDecoys(dt: dt, looked: lookedDecoy, hold: held || freezeProgress, into: &events)
 
-        // Level end: stop spawning after levelLengthSec, finish when the sky is clear.
-        if levelTime >= config.levelLengthSec {
+        // Timed level: won when its time is up, whatever share was burned; a weak share makes the next one gentler.
+        // The meteors still in the sky leave with the level and count for neither side, and every level starts
+        // with full shields (two minutes of the late levels let more meteors through than 45 s did).
+        if let limit = config.levelTimeLimitSec {
+            if levelTime >= limit {
+                let total = destroyedThisLevel + reachedThisLevel
+                let ratio = total > 0 ? Double(destroyedThisLevel) / Double(total) : 1
+                let finished = level
+                level = min(config.levelCount, level + 1)
+                d = config.difficulty(level: level)
+                if ratio < config.rules.easeKillRatio { d = max(0, d - config.rules.failEaseStep) }
+                restartLevel()
+                events.append(.levelEnded(level: finished, killRatio: ratio, nextLevel: level))
+                return events
+            }
+        } else if levelTime >= config.levelLengthSec {
+            // Level end: stop spawning after levelLengthSec, finish when the sky is clear.
             if asteroids.isEmpty {
                 let total = destroyedThisLevel + reachedThisLevel
                 let ratio = total > 0 ? Double(destroyedThisLevel) / Double(total) : 1

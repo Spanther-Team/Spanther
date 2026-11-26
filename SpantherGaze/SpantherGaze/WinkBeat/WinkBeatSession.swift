@@ -12,9 +12,28 @@ struct WinkBeatStamp: Identifiable, Equatable {
     let time: Double
 }
 
-/// What the eyes just did, for the HUD's corner chip.
+/// What the eyes just did, for the HUD's corner chip. `beatBlink`: a blink on a level where blinks play.
 enum WinkBeatEyesNote: Equatable {
-    case open, blink, winkLeft, winkRight, longBlink, noFace
+    case open, blink, winkLeft, winkRight, longBlink, beatBlink, noFace
+}
+
+/// What the player has opened, kept on this phone: the first play is on Easy, the difficulty last played is chosen
+/// next time, and Hard (winks only) opens once Normal has been played to the end without the energy running out.
+enum WinkBeatProgress {
+    private static let lastKey = "winkbeat.lastDifficulty"
+    private static let hardKey = "winkbeat.hardOpen"
+
+    static var last: WinkBeatDifficulty {
+        UserDefaults.standard.string(forKey: lastKey).flatMap(WinkBeatDifficulty.init(rawValue:)) ?? .easy
+    }
+
+    static var hardOpen: Bool { UserDefaults.standard.bool(forKey: hardKey) }
+
+    static func played(_ play: WinkBeatPlay) {
+        let d = play.rules.difficulty
+        UserDefaults.standard.set(d.rawValue, forKey: lastKey)
+        if d == .normal, play.finished, !play.failed { UserDefaults.standard.set(true, forKey: hardKey) }
+    }
 }
 
 /// The numbers the HUD shows, pushed a few times a second, not every frame.
@@ -78,7 +97,8 @@ final class WinkBeatSession: ObservableObject {
     private var touchAim: Vec2?
     private var botPlayer: WinkBeatBot?
     private var botFrame = 0
-    private var botBlinks = 0
+    /// Two-eye closures the eyes saw in this play (blinks, long blinks, blinks that play): for the results.
+    private(set) var blinksSeen = 0
     /// CI: the spinner line is printed once, so the screenshot step can wait for it instead of guessing the time.
     private var spinnerSignalled = false
     private var timer: Timer?
@@ -98,14 +118,23 @@ final class WinkBeatSession: ObservableObject {
     /// The play ended (host time).
     var onEnd: ((Double, WinkBeatPlay) -> Void)?
 
-    init(map: WinkBeatMap?, byEye: Bool, bot: Bool, measuredErrorPt: Double, zoneFloorPt: Double) {
+    /// The lock assist's reach on this screen (pt): `WinkBeatRules.assistPt`.
+    private let assistPt: Double
+
+    init(map: WinkBeatMap?, byEye: Bool, bot: Bool, measuredErrorPt: Double, zoneFloorPt: Double, assistPt: Double) {
         self.map = map
         self.byEye = byEye
         self.bot = bot
         self.measuredErrorPt = measuredErrorPt
         self.zoneFloorPt = zoneFloorPt
+        self.assistPt = assistPt
+        // The CI bot plays Normal; a player starts where they left off, Easy the first time.
+        difficulty = bot ? .normal : WinkBeatProgress.last
         loadMusic()
     }
+
+    /// Whether a difficulty can be chosen: Hard only after Normal has been passed (the bot plays any).
+    func opened(_ d: WinkBeatDifficulty) -> Bool { d != .hard || bot || WinkBeatProgress.hardOpen }
 
     /// The bundled track decoded into memory, off the main thread.
     private func loadMusic() {
@@ -136,11 +165,13 @@ final class WinkBeatSession: ObservableObject {
     func prepare(screen: CGSize) {
         guard let map else { return }
         field = WinkBeatField(width: Double(max(screen.width, 100)), height: Double(max(screen.height, 100)))
+        if !opened(difficulty) { difficulty = .normal }
         let p = WinkBeatPlay(map: map, difficulty: difficulty, field: field, measuredErrorPt: measuredErrorPt,
-                             zoneFloorPt: zoneFloorPt)
+                             zoneFloorPt: zoneFloorPt, assistPt: assistPt)
         play = p
         endTime = p.objects.map(\.endTime).max() ?? map.durationSec
-        eyes = WinkBeatEyes()
+        eyes = WinkBeatEyes(config: WinkBeatEyesConfig(blinksPlay: difficulty.blinksPlay))
+        blinksSeen = 0
         lock = GazeLock()
         stamps = []
         marks = []
@@ -188,12 +219,13 @@ final class WinkBeatSession: ObservableObject {
         spin = nil
         spinnerShown = nil
         phase = .done
+        if !bot { WinkBeatProgress.played(play) }
         onEnd?(CACurrentMediaTime(), play)
         if bot {
             // For the Simulator smoke test's check.
             let acc = (play.accuracy * 1000).rounded() / 10
             print("WINKBEAT_RESULT \(acc) \(play.rank.label) \(play.score) maxCombo=\(play.maxCombo) "
-                  + "misses=\(play.count(.miss)) blinks=\(botBlinks)")
+                  + "misses=\(play.count(.miss)) blinks=\(blinksSeen)")
             fflush(stdout)
         }
     }
@@ -326,12 +358,16 @@ final class WinkBeatSession: ObservableObject {
                 switch c {
                 case let .wink(_, onset, _): begin(host: onset)
                 case let .longBlink(onset, _) where difficulty.acceptsLongBlink: begin(host: onset)
+                case let .beatBlink(onset, aim):
+                    // A blink is not deliberate like a wink: it starts the play only with the aim on the start disc.
+                    if let a = aim, a.distance(to: startPoint) <= assistPt { begin(host: onset) }
                 default: break
                 }
             }
         case .playing:
             guard let play, let t = clock.trackTime(host: host) else { return }
-            let locked = lock.update(aim: r.aim, time: host, targets: play.lockTargets(at: t))
+            // A look past the screen edge counts as on the edge: the tracked aim overshoots objects near it.
+            let locked = lock.update(aim: play.onField(r.aim), time: host, targets: play.lockTargets(at: t))
             for c in r.closures {
                 note(c, host: host)
                 guard var j = c.forJudge, let onsetTrack = clock.trackTime(host: j.time) else { continue }
@@ -348,10 +384,15 @@ final class WinkBeatSession: ObservableObject {
     private func note(_ c: WinkBeatEyes.Closure, host: Double) {
         switch c {
         case let .wink(side, _, _): eyesNote = side == .left ? .winkLeft : .winkRight
-        case .longBlink: eyesNote = .longBlink
+        case .longBlink:
+            eyesNote = .longBlink
+            blinksSeen += 1
+        case .beatBlink:
+            eyesNote = .beatBlink
+            blinksSeen += 1
         case .blink:
             eyesNote = .blink
-            botBlinks += 1
+            blinksSeen += 1
         }
         eyesNoteUntil = host + 0.9
         pushHud(force: true)
@@ -371,7 +412,7 @@ final class WinkBeatSession: ObservableObject {
             let under = play.lockTargets(at: t)
                 .filter { $0.position.distance(to: p) <= $0.reach }
                 .min { abs(play.expected($0.id) - t) < abs(play.expected($1.id) - t) }
-            let side = under.flatMap { WinkSide(rawValue: play.objects[$0.id].side.rawValue) } ?? .left
+            let side = under.flatMap { WinkSide(rawValue: play.side($0.id).rawValue) } ?? .left
             let events = self.play?.closure(WinkBeatClosure(side: side, time: t, aim: p), prefer: under?.id) ?? []
             apply(events, host: host, t: t)
         case .select, .done:

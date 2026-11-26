@@ -36,6 +36,19 @@ public enum WinkBeatDifficulty: String, Codable, Sendable, CaseIterable {
     public var maxSliderSpeed: Double { switch self { case .easy: return 0.45; case .normal: return 0.6; case .hard: return 0.8 } }
     /// The same eye at most this many times in a row (fatigue). Easy uses `any` everywhere.
     public var maxSameEyeRun: Int { switch self { case .easy: return 0; case .normal: return 4; case .hard: return 4 } }
+
+    // Since 2026-11-26 (Aziz's first phone runs): most players close both eyes on the beat, one-eye winks came out
+    // half closed, and the tracked aim sat about 1.6 cm above the circles. Below Hard any closure plays, the eye
+    // colours do not matter, and only the object due next can be locked, from far and from past the screen edge.
+
+    /// A closure of both eyes (an ordinary blink) plays objects, and any eye plays any object. Hard keeps the
+    /// left and right eye colours and never takes a blink.
+    public var blinksPlay: Bool { self != .hard }
+    /// Only the next object due can be locked, and from `WinkBeatRules.assistPt` away.
+    public var lockAssist: Bool { self != .hard }
+    /// Seconds after the first object during which the energy bar cannot empty, so a first try is never over
+    /// in a few beats.
+    public var noFailSec: Double { 30 }
 }
 
 public enum WinkBeatKind: String, Codable, Sendable, CaseIterable {

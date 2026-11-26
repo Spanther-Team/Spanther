@@ -55,6 +55,11 @@ public struct BalanceConfig: Codable, Sendable {
     public var maxOnScreenIfErrorAbovePt: ErrorCap
     public var levelLengthSec: Double
     public var earthShields: Int
+    /// Timed levels (Aziz, 2026-11-26): a level lasts this long (s) and is then won whatever share was burned, and
+    /// the next one starts. Meteors keep coming until then, and empty shields recharge instead of restarting the
+    /// level. nil: the BALANCE.md rules (spawn for `levelLengthSec`, finish when the sky is clear, advance at
+    /// `advanceKillRatio`).
+    public var levelTimeLimitSec: Double?
     // Not in the BALANCE.md JSON block, taken from its tables. Optional so the original block still decodes.
     public var levels: Int?
     /// Percent of S / M / L / XL per level (row 0 = level 1).

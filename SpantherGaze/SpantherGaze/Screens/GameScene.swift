@@ -6,6 +6,8 @@ final class GameHUD: ObservableObject {
     @Published var score = 0
     @Published var shields = 5
     @Published var level = 1
+    /// Whole seconds left in a timed level, nil when levels are not timed.
+    @Published var secondsLeft: Int?
     @Published var lookBack = false
     @Published var banner: String?
     @Published var energy = 0
@@ -42,7 +44,7 @@ final class GameScene: SKScene {
     /// Blinks counted toward the next reload, for the HUD.
     var pendingBlinks: () -> Int = { 0 }
     /// CSV event rows: kind ("energy" per kill, "reload", "level" for a new level, "restart" when shields ran
-    /// out), the energy left after it, and the level it happened on.
+    /// out, "recharge" when they ran out on a timed level), the energy left after it, and the level it happened on.
     var onGameEvent: ((_ kind: String, _ energy: Int, _ level: Int) -> Void)?
     /// Eye mode: the centre of the meteor taken as looked at on this frame (screen pt), or nil. The aim adapter
     /// learns from it.
@@ -220,6 +222,7 @@ final class GameScene: SKScene {
         world.addChild(warm)
         warm.run(.sequence([.wait(forDuration: 0.5), .removeFromParent()]))
         hud.shields = m.shields; hud.level = m.level; hud.score = 0
+        hud.secondsLeft = m.levelTimeLeft.map { Int($0.rounded(.up)) }
         hud.energy = m.energy; hud.energyMax = m.energyMax
         if let e = config.energy {
             tapBurst = BurstCounter(count: e.touchReloadTaps, windowSec: e.reloadWindowSec)
@@ -409,15 +412,32 @@ final class GameScene: SKScene {
                 hud.energy = m.energy
                 onGameEvent?("restart", m.energy, lvl)
                 flash(L("Щиты кончились. Уровень {0} ещё раз", lvl))
+            case .shieldsRecharged(let lvl):
+                stones.values.forEach { $0.leave(seconds: 0.4) }
+                stones.removeAll()
+                endCharge()
+                hud.shields = m.shields
+                onGameEvent?("recharge", m.energy, lvl)
+                flash(L("Щиты кончились и снова заряжены. Держись до конца уровня!"))
             case .levelEnded(_, let ratio, let next):
+                // A timed level ends with meteors still up: they fade away with it.
+                stones.values.forEach { $0.leave(seconds: 0.4) }
+                stones.removeAll()
+                endCharge()
                 hud.level = next
+                hud.shields = m.shields
                 hud.energy = m.energy
                 onGameEvent?("level", m.energy, next)
-                flash(String(format: L("Сбито %.0f%% · Уровень %d"), ratio * 100, next))
+                flash(m.config.levelTimeLimitSec == nil
+                      ? String(format: L("Сбито %.0f%% · Уровень %d"), ratio * 100, next)
+                      : String(format: L("Уровень пройден! Сбито %.0f%% · Уровень %d"), ratio * 100, next))
             case .pausedForFace(let on):
                 hud.lookBack = on
             }
         }
+
+        let left = m.levelTimeLeft.map { Int($0.rounded(.up)) }
+        if hud.secondsLeft != left { hud.secondsLeft = left }
 
         var gazePoint: CGPoint?
         if case .point(let p) = gaze { gazePoint = sk(p) }

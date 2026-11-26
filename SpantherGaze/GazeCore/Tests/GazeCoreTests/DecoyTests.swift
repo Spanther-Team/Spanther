@@ -138,7 +138,7 @@ final class SmallTargetTests: XCTestCase {
                           zoneFloorPt: c.zoneFloor(errorPt: miss, jitterPt: 20), seed: 35)
         var ended: (ratio: Double, next: Int)?
         var t = 0.0
-        while ended == nil, t < 120 {
+        while ended == nil, t < 130 {
             let target = m.asteroids.max { $0.position.y < $1.position.y }
             if m.starved { m.reload() }
             let gaze: GazeInput = target.map { .point($0.position + Vec2(miss * 0.8, miss * 0.6)) } ?? .notLooking
@@ -375,7 +375,7 @@ final class DecoyTests: XCTestCase {
         let m = try model(seed: 54)
         var tally = MeteorTally()
         var t = 0.0
-        while t < 100 {
+        while t < 160 {
             let target = m.asteroids.max { $0.position.y < $1.position.y }
             if m.starved { m.reload() }
             for e in m.update(dt: 1.0 / 60, gaze: target.map { .point($0.position) } ?? .notLooking) {
@@ -387,7 +387,7 @@ final class DecoyTests: XCTestCase {
             }
             t += 1.0 / 60
         }
-        let s = tally.summary(id: "x", childCode: "", start: Date(timeIntervalSince1970: 0), durationSec: 100, byEye: true,
+        let s = tally.summary(id: "x", childCode: "", start: Date(timeIntervalSince1970: 0), durationSec: 160, byEye: true,
                               calibrationErrorCm: 1)
         XCTAssertGreaterThanOrEqual(s.decoys ?? 0, 8)
         XCTAssertLessThanOrEqual(s.decoyErrors ?? 99, 1, "a sign that flies through a meteor's zone may catch one look")

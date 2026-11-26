@@ -18,6 +18,8 @@ public struct WinkBeatBot: Sendable {
         public var closureShiftPt = 60.0
         /// Play `any` objects with long blinks instead of winks (a child who cannot wink).
         public var longBlinks = false
+        /// Play every object with a short blink of both eyes, whatever eye it asks for (most players on the phone).
+        public var beatBlinks = false
         /// Skip every n-th wink (0: none).
         public var skipEvery = 0
         /// Only blink, never wink.
@@ -43,6 +45,10 @@ public struct WinkBeatBot: Sendable {
             winkIndex += 1
             if style.skipEvery > 0, winkIndex % style.skipEvery == 0 { continue }
             let start = o.time + style.latencySec + Self.gaussian(&rng) * style.latencyJitterSec
+            if style.beatBlinks {
+                list.append(Closure(start: start, duration: 0.13, side: .both))
+                continue
+            }
             switch o.side {
             case .left: list.append(Closure(start: start, duration: 0.13, side: .left))
             case .right: list.append(Closure(start: start, duration: 0.13, side: .right))
@@ -115,13 +121,14 @@ public struct WinkBeatBot: Sendable {
         return (-2 * log(u1)).squareRoot() * cos(2 * Double.pi * u2)
     }
 
-    /// Plays a whole chart through `WinkBeatEyes`, the gaze lock and the judge, at 60 frames per second. Returns
-    /// the finished play and how many ordinary blinks the eyes saw.
+    /// Plays a whole chart through `WinkBeatEyes`, the gaze lock and the judge, at 60 frames per second, the way
+    /// the app does. Returns the finished play and how many short two-eye blinks the eyes saw (ordinary blinks,
+    /// and blinks sent to play on levels where blinks play). `eyes`: nil takes the play's difficulty.
     public static func run(_ play: WinkBeatPlay, style: Style = Style(),
-                           eyes config: WinkBeatEyesConfig = WinkBeatEyesConfig()) -> (play: WinkBeatPlay, blinks: Int) {
+                           eyes config: WinkBeatEyesConfig? = nil) -> (play: WinkBeatPlay, blinks: Int) {
         var play = play
         let bot = WinkBeatBot(play: play, style: style)
-        var eyes = WinkBeatEyes(config: config)
+        var eyes = WinkBeatEyes(config: config ?? WinkBeatEyesConfig(blinksPlay: play.rules.difficulty.blinksPlay))
         var lock = GazeLock()
         var blinks = 0
         guard let firstObject = play.objects.first, let last = play.objects.map(\.endTime).max() else { return (play, 0) }
@@ -131,9 +138,12 @@ public struct WinkBeatBot: Sendable {
         while t < last + 1.5, !play.finished {
             let f = bot.frame(at: t, index: index)
             let seen = eyes.update(time: t, aim: f.aim, left: f.left, right: f.right)
-            let locked = lock.update(aim: seen.aim, time: t, targets: play.lockTargets(at: t))
+            let locked = lock.update(aim: play.onField(seen.aim), time: t, targets: play.lockTargets(at: t))
             for c in seen.closures {
-                if case .blink = c { blinks += 1 }
+                switch c {
+                case .blink, .beatBlink: blinks += 1
+                default: break
+                }
                 if let j = c.forJudge { play.closure(j, prefer: locked) }
             }
             play.frame(time: t, aim: seen.aim)

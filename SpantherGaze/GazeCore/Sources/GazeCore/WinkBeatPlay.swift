@@ -49,20 +49,38 @@ public struct WinkBeatRules: Equatable, Sendable {
     public var petals = 8
     /// Long blink: both eyes closed at least this long plays `any` objects on levels that accept it (s).
     public var longBlinkSec = 0.3
+    /// Lock assist (`WinkBeatDifficulty.lockAssist`): the object due next locks, and a closure plays it, from this
+    /// far (pt). About 2.8 cm on a phone: the aim was 1.6 cm off on Aziz's first runs, and with one object to
+    /// choose there is nothing to mix it up with.
+    public var assistPt = 170.0
+    /// An aim at most this far outside the field counts as on its edge (pt): looks at an object near the edge
+    /// overshoot it. Further out, the player is looking away.
+    public var edgeSlackPt = 160.0
+    /// A closure reaches the judge about this long after its onset (the detector's `minClosedSec` and a frame):
+    /// the lock and the miss call wait for it (s).
+    public var decideSec = 0.08
+    /// Over the difficulty's `noFailSec` at the start, the energy bar stops at this much instead of failing.
+    public var noFailFloor = 0.2
+
+    /// How close the aim must be for a lock or a closure to take an object (pt).
+    public var reachPt: Double { difficulty.lockAssist ? max(zonePt, assistPt) : zonePt }
 
     /// Rules for a difficulty on a field. The zone grows by the calibration's measured error (capped at 90 pt) and
     /// never drops under the balance floor (calibration miss + 1.5 x spread, `BalanceConfig.zoneFloor`).
+    /// `assistPt`: the lock assist's reach on this screen (pt), 2.8 cm.
     public static func make(_ d: WinkBeatDifficulty, field: WinkBeatField, measuredErrorPt: Double = 0,
-                            zoneFloorPt: Double = 0) -> WinkBeatRules {
+                            zoneFloorPt: Double = 0, assistPt: Double = 170) -> WinkBeatRules {
         let zone = max(d.zoneBasePt + max(0, min(measuredErrorPt, 90)), zoneFloorPt)
         let radius = 0.32 * min(field.width, field.height)
         return WinkBeatRules(difficulty: d, perfectSec: d.perfectSec, greatSec: d.greatSec, goodSec: d.goodSec,
-                             zonePt: zone, followPt: zone * 1.5, spinnerRadiusPt: radius, spinnerInnerPt: 0.3 * radius)
+                             zonePt: zone, followPt: zone * 1.5, spinnerRadiusPt: radius, spinnerInnerPt: 0.3 * radius,
+                             assistPt: assistPt)
     }
 }
 
-/// A closure that may play an object: a one-eye wink, or a long blink (`side == .both`). `aim` is the aim from
-/// just before the lid came down (`WinkBeatEyes` takes it), `time` the closure onset in track time.
+/// A closure that may play an object: a one-eye wink, or a blink of both eyes (`side == .both`: any blink where
+/// `WinkBeatDifficulty.blinksPlay`, else a long blink on easy). `aim` is the aim from just before the lid came down
+/// (`WinkBeatEyes` takes it), `time` the closure onset in track time.
 public struct WinkBeatClosure: Equatable, Sendable {
     public var side: WinkSide
     public var time: Double
@@ -123,7 +141,8 @@ public struct WinkBeatPlay: Sendable {
     public private(set) var stray = 0
     public private(set) var closuresLeft = 0
     public private(set) var closuresRight = 0
-    public private(set) var longBlinks = 0
+    /// Closures of both eyes the judge saw: blinks where they play, long blinks on easy otherwise.
+    public private(set) var blinks = 0
 
     private var heads: [WinkBeatGrade?]
     private var follow: [(inside: Double, total: Double)]
@@ -131,6 +150,8 @@ public struct WinkBeatPlay: Sendable {
     private var spinner: [(petal: Int?, net: Int, best: Int)]
     private var lastTime: Double?
     private var first = 0
+    /// Latest track time seen by a frame or a closure (s): the no-fail start needs it.
+    private var now = -Double.infinity
 
     public init(objects: [WinkBeatObject], rules: WinkBeatRules, field: WinkBeatField, beatSec: Double,
                 latencySec: Double = 0.08) {
@@ -156,9 +177,10 @@ public struct WinkBeatPlay: Sendable {
 
     /// A play of one chart of a map.
     public init(map: WinkBeatMap, difficulty: WinkBeatDifficulty, field: WinkBeatField, measuredErrorPt: Double = 0,
-                zoneFloorPt: Double = 0, latencySec: Double = 0.08) {
+                zoneFloorPt: Double = 0, assistPt: Double = 170, latencySec: Double = 0.08) {
         self.init(objects: map.chart(difficulty),
-                  rules: .make(difficulty, field: field, measuredErrorPt: measuredErrorPt, zoneFloorPt: zoneFloorPt),
+                  rules: .make(difficulty, field: field, measuredErrorPt: measuredErrorPt, zoneFloorPt: zoneFloorPt,
+                               assistPt: assistPt),
                   field: field, beatSec: map.beatSec, latencySec: latencySec)
     }
 
@@ -198,26 +220,44 @@ public struct WinkBeatPlay: Sendable {
         }
     }
 
-    /// Lock targets for `GazeLock`: unplayed circles and slider heads in reach of their window.
+    /// Lock targets for `GazeLock`: unplayed circles and slider heads in reach of their window. With the lock
+    /// assist only the first of them, the one due next, with the wider reach.
     public func lockTargets(at t: Double) -> [GazeLock.Target] {
-        objects.indices.compactMap { i in
-            guard objects[i].needsWink, results[i] == nil, heads[i] == nil,
-                  t >= objects[i].time - rules.difficulty.leadSec, t <= expected(i) + rules.goodSec else { return nil }
-            return GazeLock.Target(id: i, position: positions[i], reach: rules.zonePt)
+        var targets: [GazeLock.Target] = []
+        for i in first..<objects.count {
+            if objects[i].time - rules.difficulty.leadSec > t { break }
+            guard objects[i].needsWink, results[i] == nil, heads[i] == nil, t <= expected(i) + rules.goodSec + rules.decideSec else { continue }
+            targets.append(GazeLock.Target(id: i, position: positions[i], reach: rules.reachPt))
+            if rules.difficulty.lockAssist { break }
         }
+        return targets
+    }
+
+    /// The eye an object asks for in this play: its own below Hard only if the level keeps eye colours.
+    public func side(_ i: Int) -> NoteSide { rules.difficulty.blinksPlay ? .any : objects[i].side }
+
+    /// The aim moved onto the field when it is just past an edge (`WinkBeatRules.edgeSlackPt`), so an object near
+    /// the edge can still be locked; further out (or nil) it is returned as it is. Use it for the lock and the judge.
+    public func onField(_ aim: Vec2?) -> Vec2? {
+        guard let a = aim else { return nil }
+        let s = rules.edgeSlackPt
+        guard a.x >= -s, a.x <= field.width + s, a.y >= -s, a.y <= field.height + s else { return a }
+        return Vec2(min(max(a.x, 0), field.width), min(max(a.y, 0), field.height))
     }
 
     // MARK: - Input
 
     /// A closure that may play an object. `prefer`: the object the aim is locked on (`GazeLock`); it is played
-    /// when its window holds the closure, even if an earlier object's window does too.
+    /// when its window holds the closure, even if an earlier object's window does too, and with the lock assist
+    /// even if the aim from before the lid came down was outside the reach.
     @discardableResult
     public mutating func closure(_ c: WinkBeatClosure, prefer: Int? = nil) -> [WinkBeatEvent] {
         guard !failed else { return [] }
+        now = max(now, c.time)
         switch c.side {
         case .left: closuresLeft += 1
         case .right: closuresRight += 1
-        case .both: longBlinks += 1
+        case .both: blinks += 1
         }
         var sideOK: [Int] = []
         var rejected: (Int, WinkBeatRejection)?
@@ -227,18 +267,22 @@ public struct WinkBeatPlay: Sendable {
             defer { i += 1 }
             let o = objects[i]
             guard o.needsWink, results[i] == nil, heads[i] == nil else { continue }
+            let wants = side(i)
             if c.side == .both {
-                guard o.side == .any, rules.difficulty.acceptsLongBlink else {
+                guard wants == .any, rules.difficulty.blinksPlay || rules.difficulty.acceptsLongBlink else {
                     if rejected == nil || i == prefer { rejected = (i, .blink) }
                     continue
                 }
-            } else if o.side != .any, o.side.rawValue != c.side.rawValue {
+            } else if wants != .any, wants.rawValue != c.side.rawValue {
                 if rejected == nil || i == prefer { rejected = (i, .wrongEye) }
                 continue
             }
             sideOK.append(i)
         }
-        let aimed = sideOK.filter { k in c.aim.map { $0.distance(to: positions[k]) <= rules.zonePt } ?? false }
+        let aim = onField(c.aim)
+        let aimed = sideOK.filter { k in
+            (rules.difficulty.lockAssist && k == prefer) || (aim.map { $0.distance(to: positions[k]) <= rules.reachPt } ?? false)
+        }
         guard let k = aimed.contains(where: { $0 == prefer }) ? prefer : aimed.first else {
             if let r = rejected, sideOK.isEmpty {
                 if r.1 == .wrongEye { wrongEye += 1 }
@@ -270,11 +314,14 @@ public struct WinkBeatPlay: Sendable {
     @discardableResult
     public mutating func frame(time t: Double, aim: Vec2?) -> [WinkBeatEvent] {
         guard !failed else { return [] }
+        now = max(now, t)
         let dt = lastTime.map { min(0.1, max(0, t - $0)) } ?? 0
         lastTime = t
         var events: [WinkBeatEvent] = []
-        // A long blink is known only once it has lasted; wait that long before calling a miss.
-        let wait = rules.goodSec + (rules.difficulty.acceptsLongBlink ? rules.longBlinkSec : 0)
+        // A closure is known only once the detector has decided it, a long blink only once it has lasted: wait
+        // that long before calling a miss.
+        let long = rules.difficulty.acceptsLongBlink && !rules.difficulty.blinksPlay
+        let wait = rules.goodSec + rules.decideSec + (long ? rules.longBlinkSec : 0)
         for i in first..<objects.count {
             let o = objects[i]
             if o.time - rules.difficulty.leadSec > t { break }
@@ -395,7 +442,8 @@ public struct WinkBeatPlay: Sendable {
     }
 
     private mutating func changeEnergy(_ delta: Double) -> [WinkBeatEvent] {
-        energy = min(1, max(0, energy + delta))
+        let floor = now < (objects.first?.time ?? 0) + rules.difficulty.noFailSec ? rules.noFailFloor : 0
+        energy = min(1, max(min(energy, floor), energy + delta))
         if energy <= 0, rules.difficulty.failable, !failed {
             failed = true
             return [.failed]

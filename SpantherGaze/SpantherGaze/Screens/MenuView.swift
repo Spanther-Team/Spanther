@@ -83,7 +83,7 @@ struct MenuView: View {
             // Three plates of one height: the tallest text sets it, and the buttons line up along the bottom.
             HStack(alignment: .top, spacing: 12) {
                 meteorPlate
-                rhythmPlate
+                winkBeatPlate
                 pursuitPlate
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -271,16 +271,17 @@ struct MenuView: View {
               })
     }
 
-    private var rhythmPlate: some View {
-        plate(L("Ритм"), L("Смотри на звезду и подмигивай, когда стрелка дойдёт до метки."),
+    /// Wink Beat took the rhythm game's place (Aziz, 2026-11-26). The old rhythm screens stay in the code for the
+    /// CI run and the reports, without a way in from the menu.
+    private var winkBeatPlate: some View {
+        plate("Wink Beat", L("Круги вспыхивают в такт музыке. Посмотри на круг и моргни, когда кольцо сойдётся с ним."),
               accent: Atlas.sky, order: 2,
               art: { NoteVignette() },
               actions: {
-                  Button { app.openRhythm() } label: { buttonText(L("Выбрать трек")) }
-                      .buttonStyle(AtlasPrimaryButton())
-                      .disabled(app.rhythmTracks.isEmpty)
-                  Button { app.openWinkBeat() } label: { buttonText("Wink Beat") }
+                  Button { app.openWinkBeat() } label: { buttonText(L("Играть глазами")) }
                       .buttonStyle(AtlasPrimaryButton(fill: Atlas.gold))
+                      .disabled(!app.eyeTrackingSupported)
+                  fingerButton(L("Играть пальцем")) { app.openWinkBeat(byEye: false) }
               })
     }
 

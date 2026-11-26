@@ -56,9 +56,9 @@ enum WinkBeatText {
 
     static func hint(_ d: WinkBeatDifficulty) -> String {
         switch d {
-        case .easy: return L("Любой глаз. Можно долго моргнуть.")
-        case .normal: return L("Синие круги левым глазом, золотые правым.")
-        case .hard: return L("Больше нот и быстрее.")
+        case .easy: return L("Моргни, когда кольцо сойдётся с кругом. Энергия не кончится.")
+        case .normal: return L("Моргай в такт, нот больше. Первые полминуты энергия не кончится.")
+        case .hard: return L("Только подмигивания: синие круги левым глазом, золотые правым.")
         }
     }
 
@@ -84,6 +84,7 @@ enum WinkBeatText {
         case .winkLeft: return (L("Левый глаз"), L("подмигивание"))
         case .winkRight: return (L("Правый глаз"), L("подмигивание"))
         case .longBlink: return (L("Долгое моргание"), L("засчитано"))
+        case .beatBlink: return (L("Моргание"), L("считается"))
         case .noFace: return (L("Лицо не видно"), L("посмотри на экран"))
         }
     }
@@ -392,10 +393,16 @@ struct WinkBeatSelect: View {
             HStack(spacing: 8 * s) {
                 ForEach(WinkBeatDifficulty.allCases, id: \.self) { d in
                     let on = session.difficulty == d
+                    let shut = !session.opened(d)
                     Button { session.difficulty = d } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(WinkBeatText.difficulty(d)).font(.system(size: 14 * s, weight: .black).italic())
-                            Text(L("{0} нот", session.count(d))).font(.system(size: 10 * s, weight: .bold))
+                            if shut {
+                                Label(L("после Среднего"), systemImage: "lock.fill")
+                                    .font(.system(size: 10 * s, weight: .bold))
+                            } else {
+                                Text(L("{0} нот", session.count(d))).font(.system(size: 10 * s, weight: .bold))
+                            }
                         }
                         .foregroundStyle(on ? Atlas.cream : Atlas.ink)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -403,8 +410,11 @@ struct WinkBeatSelect: View {
                         .background(InkSlab(shape: Rectangle(), fill: on ? Atlas.sky : Atlas.cream, depth: on ? 5 : 3, line: 3))
                         .skewed(-12)
                         .offset(y: on ? -6 : 0)
+                        .opacity(shut ? 0.55 : 1)
                     }
                     .buttonStyle(.plain)
+                    .disabled(shut)
+                    .accessibilityHint(shut ? L("Откроется, когда пройдёшь Средний до конца.") : "")
                 }
             }
             Text(WinkBeatText.hint(session.difficulty))
@@ -459,7 +469,7 @@ struct WinkBeatPlayScreen: View {
         ZStack(alignment: .topLeading) {
             if let play = session.play {
                 ForEach(session.marks, id: \.self) { i in
-                    EyeGlyph.wink(play.objects[i].side)
+                    (play.rules.difficulty.blinksPlay ? EyeGlyph.shut : EyeGlyph.wink(play.objects[i].side))
                         .frame(width: 38 * s, height: 19 * s)
                         .position(x: CGFloat(play.positions[i].x), y: CGFloat(play.positions[i].y))
                         .transition(.opacity)
@@ -516,7 +526,9 @@ struct WinkBeatPlayScreen: View {
     }
 
     private func startPrompt(_ s: CGFloat) -> some View {
-        let text = session.byEye ? L("Посмотри на круг и подмигни, чтобы начать.") : L("Коснись круга, чтобы начать.")
+        let text = !session.byEye ? L("Коснись круга, чтобы начать.")
+            : session.difficulty.blinksPlay ? L("Посмотри на круг и моргни, чтобы начать.")
+            : L("Посмотри на круг и подмигни, чтобы начать.")
         return Text(text)
             .font(.system(size: 16 * s, weight: .heavy, design: .rounded))
             .foregroundStyle(Atlas.ink)
@@ -629,7 +641,7 @@ struct WinkBeatHUD: View {
                 .accessibilityLabel(L("Стоп"))
                 let e = WinkBeatText.eyes(h.eyes)
                 HStack(spacing: 9) {
-                    (h.eyes == .blink || h.eyes == .longBlink ? EyeGlyph.shut : EyeGlyph.open)
+                    ([.blink, .longBlink, .beatBlink].contains(h.eyes) ? EyeGlyph.shut : EyeGlyph.open)
                         .with(color: Atlas.cream)
                         .frame(width: 40 * s, height: 20 * s)
                     VStack(alignment: .leading, spacing: 1) {
@@ -769,8 +781,8 @@ struct WinkBeatResults: View {
                     .skewed()
                 }
             }
-            Text(L("Подмигиваний: левым {0}, правым {1}. Долгих морганий: {2}.",
-                   play.closuresLeft, play.closuresRight, play.longBlinks))
+            Text(L("Подмигиваний: левым {0}, правым {1}. Морганий: {2}.",
+                   play.closuresLeft, play.closuresRight, session.blinksSeen))
                 .font(.system(size: 12 * s, weight: .semibold)).foregroundStyle(Atlas.inkSoft)
             HStack(spacing: 10) {
                 Button { session.prepare(screen: size) } label: { Text(L("Ещё раз")) }
