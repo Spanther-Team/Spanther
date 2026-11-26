@@ -12,9 +12,13 @@ struct WinkBeatStamp: Identifiable, Equatable {
     let time: Double
 }
 
-/// What the eyes just did, for the HUD's corner chip. `beatBlink`: a blink on a level where blinks play.
+/// What the eyes just did, for the HUD's corner chip. On a level where blinks play, a blink says what it did:
+/// `beatBlink` played an object, `blinkOffTarget` missed it (the aim was off it, or off the start disc),
+/// `blinkOffBeat` came with no object due.
 enum WinkBeatEyesNote: Equatable {
-    case open, blink, winkLeft, winkRight, longBlink, beatBlink, noFace
+    case open, blink, winkLeft, winkRight, longBlink, beatBlink, blinkOffTarget, blinkOffBeat, noFace
+
+    var shut: Bool { [.blink, .longBlink, .beatBlink, .blinkOffTarget, .blinkOffBeat].contains(self) }
 }
 
 /// What the player has opened, kept on this phone: the first play is on Easy, the difficulty last played is chosen
@@ -284,6 +288,8 @@ final class WinkBeatSession: ObservableObject {
         case .ready:
             // The bot starts once the start disc has been on screen for the screenshot.
             if bot, host > readyHost + 3.0 { begin(host: host) }
+            // The chip's word for a blink off the start disc goes away on its own.
+            if hud.eyes == .blinkOffTarget, host >= eyesNoteUntil { pushHud(force: true, host: host) }
         case .playing:
             guard let t = heardTime(host: host) else { return }
             if let b = botPlayer {
@@ -360,7 +366,11 @@ final class WinkBeatSession: ObservableObject {
                 case let .longBlink(onset, _) where difficulty.acceptsLongBlink: begin(host: onset)
                 case let .beatBlink(onset, aim):
                     // A blink is not deliberate like a wink: it starts the play only with the aim on the start disc.
-                    if let a = aim, a.distance(to: startPoint) <= assistPt { begin(host: onset) }
+                    if let a = aim, a.distance(to: startPoint) <= assistPt {
+                        begin(host: onset)
+                    } else {
+                        show(.blinkOffTarget, host: host)
+                    }
                 default: break
                 }
             }
@@ -369,11 +379,14 @@ final class WinkBeatSession: ObservableObject {
             // A look past the screen edge counts as on the edge: the tracked aim overshoots objects near it.
             let locked = lock.update(aim: play.onField(r.aim), time: host, targets: play.lockTargets(at: t))
             for c in r.closures {
-                note(c, host: host)
-                guard var j = c.forJudge, let onsetTrack = clock.trackTime(host: j.time) else { continue }
+                guard var j = c.forJudge, let onsetTrack = clock.trackTime(host: j.time) else {
+                    note(c, host: host)
+                    continue
+                }
                 let onsetHost = j.time
                 j.time = onsetTrack
                 let events = self.play?.closure(j, prefer: locked) ?? []
+                note(c, host: host, played: events)
                 apply(events, host: onsetHost, t: t)
             }
         case .select, .done:
@@ -381,21 +394,39 @@ final class WinkBeatSession: ObservableObject {
         }
     }
 
-    private func note(_ c: WinkBeatEyes.Closure, host: Double) {
+    /// The chip for a closure, with what the judge made of it (`played`).
+    private func note(_ c: WinkBeatEyes.Closure, host: Double, played events: [WinkBeatEvent] = []) {
         switch c {
-        case let .wink(side, _, _): eyesNote = side == .left ? .winkLeft : .winkRight
+        case let .wink(side, _, _): show(side == .left ? .winkLeft : .winkRight, host: host)
         case .longBlink:
-            eyesNote = .longBlink
             blinksSeen += 1
+            show(.longBlink, host: host)
         case .beatBlink:
-            eyesNote = .beatBlink
             blinksSeen += 1
+            show(Self.blinkNote(events), host: host)
         case .blink:
-            eyesNote = .blink
             blinksSeen += 1
+            show(.blink, host: host)
         }
+    }
+
+    private func show(_ n: WinkBeatEyesNote, host: Double) {
+        eyesNote = n
         eyesNoteUntil = host + 0.9
         pushHud(force: true)
+    }
+
+    /// What a blink did where blinks play: played an object, missed the one due, or found none due.
+    static func blinkNote(_ events: [WinkBeatEvent]) -> WinkBeatEyesNote {
+        for e in events {
+            switch e {
+            case let .judged(_, grade, _) where grade != .miss: return .beatBlink
+            case .head: return .beatBlink
+            case .rejected: return .blinkOffTarget
+            default: continue
+            }
+        }
+        return .blinkOffBeat
     }
 
     /// A finger on the screen (touch mode, and the start disc in every mode): host time (`UITouch.timestamp`) and

@@ -325,6 +325,26 @@ final class WinkBeatTests: XCTestCase {
         XCTAssertEqual(out.first?.closure.forJudge, WinkBeatClosure(side: .both, time: 1.0, aim: Vec2(100, 100)))
     }
 
+    /// A quick blink seen only part closed, like 7 of Aziz's 42 closures on 2026-11-26 (lids 0.05, 0.25, 0.52,
+    /// 0.45, 0.2 over four frames): it plays where blinks play, and is nothing on Hard.
+    func testAQuickPartBlinkPlaysWhereBlinksPlay() {
+        let lids = [0.05, 0.25, 0.52, 0.45, 0.2]
+        for blinksPlay in [true, false] {
+            var eyes = WinkBeatEyes(config: WinkBeatEyesConfig(blinksPlay: blinksPlay))
+            var out: [WinkBeatEyes.Closure] = []
+            for f in 0..<90 {
+                let k = f - 60
+                let lid = k >= 0 && k < lids.count ? lids[k] : 0.05
+                out += eyes.update(time: Double(f) / 60, aim: Vec2(100, 100), left: lid, right: lid).closures
+            }
+            if blinksPlay {
+                XCTAssertEqual(out, [.beatBlink(onset: 62.0 / 60, aim: Vec2(100, 100))])
+            } else {
+                XCTAssertEqual(out, [], "Hard keeps the 0.6 close level")
+            }
+        }
+    }
+
     func testAWinkIsJudgedWithTheAimFromBeforeTheLidCameDown() {
         var eyes = WinkBeatEyes()
         var wink: WinkBeatClosure?
