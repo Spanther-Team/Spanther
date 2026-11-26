@@ -19,8 +19,15 @@ final class ProfilesModel: ObservableObject {
     /// Ink on the pale colours, cream on the strong ones.
     static func onColour(_ avatar: Int) -> Color { [2, 4, 6, 7].contains(avatar) ? Atlas.ink : Atlas.cream }
 
+    /// Marks the player who still has the first launch's name. That name is shown in the app's language of the
+    /// moment: it was made before the start screen's choice, often in the phone's own language.
+    static let defaultNameKey = "name.default"
+
+    /// The name on screen.
+    static func name(_ p: PlayerProfile) -> String { p.progress[defaultNameKey] == "1" ? L("Игрок {0}", 1) : p.name }
+
     /// The first letter of the name, for the avatar.
-    static func initial(_ p: PlayerProfile) -> String { p.name.first.map { String($0).uppercased() } ?? "?" }
+    static func initial(_ p: PlayerProfile) -> String { name(p).first.map { String($0).uppercased() } ?? "?" }
 
     init() {
         store = ProfileStore.defaultRoot.map { ProfileStore(root: $0) }
@@ -28,6 +35,7 @@ final class ProfilesModel: ObservableObject {
         let first = b.profiles.isEmpty
         if b.ensureOne(defaultName: L("Игрок {0}", 1), now: Date()) {
             if first { Self.bringOldProgress(into: &b) }
+            b.setProgress(Self.defaultNameKey, "1", now: Date())
             try? store?.save(b)
         }
         book = b
@@ -47,8 +55,15 @@ final class ProfilesModel: ObservableObject {
 
     @discardableResult
     func edit(_ id: UUID, name: String? = nil, avatar: Int? = nil) -> Bool {
+        // The default name saved back as it was stays the default; a typed one is the player's in every language.
+        var typed = name
+        if let n = name, let p = book.profile(id), ProfileBook.clean(name: n) == Self.name(p) { typed = nil }
         var ok = false
-        change { ok = $0.edit(id, name: name, avatar: avatar, now: Date()) }
+        change {
+            ok = $0.edit(id, name: typed, avatar: avatar, now: Date())
+            // "0", not a removed key: the sync keeps every progress key it has seen (backend/README.md).
+            if ok, typed != nil { $0.setProgress(Self.defaultNameKey, "0", of: id, now: Date()) }
+        }
         return ok
     }
 

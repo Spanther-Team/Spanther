@@ -33,7 +33,7 @@ struct ProfileChip: View {
                     if withName { Text(c.child.code).lineLimit(1) }
                 } else if let p = profiles.active {
                     AvatarDot(avatar: p.avatar, initial: ProfilesModel.initial(p), size: 28)
-                    if withName { Text(p.name).lineLimit(1) }
+                    if withName { Text(ProfilesModel.name(p)).lineLimit(1) }
                 }
             }
             .font(.system(size: 15, weight: .semibold))
@@ -44,7 +44,7 @@ struct ProfileChip: View {
             .fixedSize()
         }
         .accessibilityLabel(clinic.playing.map { L("Играет {0}", $0.child.code) }
-                            ?? L("Играет {0}", profiles.active?.name ?? ""))
+                            ?? L("Играет {0}", profiles.active.map(ProfilesModel.name) ?? ""))
         .accessibilityHint(L("Сменить игрока"))
     }
 }
@@ -102,7 +102,7 @@ struct ProfilesSheet: View {
         .confirmationDialog(L("Удалить игрока?"), isPresented: Binding(get: { deleting != nil },
                                                                      set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible, presenting: deleting) { p in
-            Button(L("Удалить {0}", p.name), role: .destructive) { onDelete(p.id) }
+            Button(L("Удалить {0}", ProfilesModel.name(p)), role: .destructive) { onDelete(p.id) }
             Button(L("Отмена"), role: .cancel) {}
         } message: { _ in
             Text(L("Калибровка этого игрока тоже удалится."))
@@ -127,7 +127,7 @@ struct ProfilesSheet: View {
                 HStack(spacing: 12) {
                     AvatarDot(avatar: p.avatar, initial: ProfilesModel.initial(p), size: 40)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(p.name).font(.system(size: 17, weight: .heavy)).foregroundStyle(Atlas.ink)
+                        Text(ProfilesModel.name(p)).font(.system(size: 17, weight: .heavy)).foregroundStyle(Atlas.ink)
                         Text(calibrationLine(p)).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                     }
                     Spacer(minLength: 8)
@@ -142,10 +142,10 @@ struct ProfilesSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(on ? L("{0}, играет", p.name) : L("Играть за {0}", p.name))
-            iconButton("pencil", L("Изменить {0}", p.name)) { startEditing(p) }
+            .accessibilityLabel(on ? L("{0}, играет", ProfilesModel.name(p)) : L("Играть за {0}", ProfilesModel.name(p)))
+            iconButton("pencil", L("Изменить {0}", ProfilesModel.name(p))) { startEditing(p) }
             if !on, profiles.book.visible.count > 1 {
-                iconButton("trash", L("Удалить {0}", p.name)) { deleting = p }
+                iconButton("trash", L("Удалить {0}", ProfilesModel.name(p))) { deleting = p }
             }
         }
         .padding(12)
@@ -188,7 +188,7 @@ struct ProfilesSheet: View {
 
     private func startEditing(_ p: PlayerProfile) {
         adding = false
-        draftName = p.name
+        draftName = ProfilesModel.name(p)
         draftAvatar = p.avatar
         editing = p.id
     }

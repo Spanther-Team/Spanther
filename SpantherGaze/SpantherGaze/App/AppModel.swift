@@ -1569,10 +1569,9 @@ final class AppModel: ObservableObject {
     @Published var childCode = UserDefaults.standard.string(forKey: "childCode") ?? "" {
         didSet {
             UserDefaults.standard.set(childCode, forKey: "childCode")
-            // A player's code goes with them; a clinic child's comes from the clinic.
-            if clinic.playingID == nil {
-                profiles.setProgress(Self.sessionsCodeKey, currentChildCode.isEmpty ? nil : currentChildCode)
-            }
+            // A player's code goes with them; a clinic child's comes from the clinic. An empty code is kept as ""
+            // rather than removed: the sync keeps every progress key it has seen.
+            if clinic.playingID == nil { profiles.setProgress(Self.sessionsCodeKey, currentChildCode) }
         }
     }
     /// Where a player keeps the code their plays are saved under (their «Занятия»).

@@ -76,7 +76,7 @@ struct CalibrationView: View {
             if kind == .calibration, let p = player {
                 HStack(spacing: 8) {
                     AvatarDot(avatar: p.avatar, initial: ProfilesModel.initial(p), size: 28)
-                    Text(p.name).font(.system(size: 15, weight: .heavy)).foregroundStyle(Atlas.ink)
+                    Text(ProfilesModel.name(p)).font(.system(size: 15, weight: .heavy)).foregroundStyle(Atlas.ink)
                     if let why = reasonLine(p) {
                         Text(why).font(Atlas.caption).foregroundStyle(Atlas.inkSoft)
                     }
