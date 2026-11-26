@@ -413,7 +413,7 @@ final class GameScene: SKScene {
                 onGameEvent?("restart", m.energy, lvl)
                 flash(L("Щиты кончились. Уровень {0} ещё раз", lvl))
             case .shieldsRecharged(let lvl):
-                stones.values.forEach { $0.leave(seconds: 0.4) }
+                stones.values.forEach(fadeAway)
                 stones.removeAll()
                 endCharge()
                 hud.shields = m.shields
@@ -421,7 +421,7 @@ final class GameScene: SKScene {
                 flash(L("Щиты кончились и снова заряжены. Держись до конца уровня!"))
             case .levelEnded(_, let ratio, let next):
                 // A timed level ends with meteors still up: they fade away with it.
-                stones.values.forEach { $0.leave(seconds: 0.4) }
+                stones.values.forEach(fadeAway)
                 stones.removeAll()
                 endCharge()
                 hud.level = next
@@ -490,6 +490,12 @@ final class GameScene: SKScene {
             }
         }
         if let h = holding { Haptics.shared.chargeProgress(h.progress) }
+    }
+
+    /// A stone that leaves with its level or with the shields: it fades where it is.
+    private func fadeAway(_ stone: StoneNode) {
+        stone.removeAllActions()
+        stone.run(.sequence([.group([.fadeOut(withDuration: 0.4), .scale(to: 0.85, duration: 0.4)]), .removeFromParent()]))
     }
 
     private func endCharge() {
