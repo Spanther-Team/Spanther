@@ -164,6 +164,18 @@ final class AppModel: ObservableObject {
     let tracker = FaceTracker()
     /// The clinic's children, courses and sessions (GazeCore ClinicStore), and who holds the phone.
     let clinic = ClinicModel()
+    /// The players on this phone and the calibration each one keeps (GazeCore ProfileStore). A clinic child picked
+    /// on «Кто играет?» plays instead of them, on the clinic's own rules.
+    let profiles = ProfilesModel()
+    /// Play found that the calibration no longer fits the player (`CalibrationHealth`): the menu offers a new one.
+    @Published private(set) var calibrationAdvice: CalibrationHealth.Reason?
+    /// Why the calibration screen came up on its own (the player's kept one is a week old, was poor, ...), for
+    /// its intro. Nil when it was asked for.
+    @Published private(set) var calibrationReason: CalibrationPolicy.Reason?
+    /// Watches the calibration in play, for a profile (the clinic's children keep their 12-hour rule).
+    private var health: CalibrationHealth?
+    /// Why the last restore of a player's kept calibration did not use it.
+    private var restoreMiss: CalibrationPolicy.Reason?
     let balance: BalanceConfig
     private(set) var logger = SessionLogger()
 
@@ -322,8 +334,17 @@ final class AppModel: ObservableObject {
         #else
         clinic.migrate(sessions)
         #endif
-        // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree.
-        if let c = clinic.playing { childCode = c.child.code }
+        WinkBeatProgress.profiles = profiles
+        bringKeptCalibrationToProfile()
+        // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree. A player
+        // plays under their own; the code typed before profiles becomes the first player's.
+        if let c = clinic.playing {
+            childCode = c.child.code
+        } else if let code = profiles.progress(Self.sessionsCodeKey) {
+            childCode = code
+        } else if !currentChildCode.isEmpty {
+            profiles.setProgress(Self.sessionsCodeKey, currentChildCode)
+        }
     }
 
     /// The child picked on «Кто играет?»: the plays from now on are saved under their code.
@@ -347,12 +368,78 @@ final class AppModel: ObservableObject {
 
     /// Forgets the session's calibration and everything learned on it: another child, or night vision switched.
     /// The next eye mode calibrates first, and the next launch does not bring the old one back.
-    private func dropCalibration() {
+    private func dropCalibration(forgetKept: Bool = true) {
         calibration = nil
         stash = nil
         report = nil
+        health = nil
+        calibrationAdvice = nil
         clearLive()
+        if forgetKept { UserDefaults.standard.removeObject(forKey: Self.keptCalibrationKey) }
+    }
+
+    // MARK: Players
+
+    /// Another player takes the phone: their own kept calibration plays when it still fits, else theirs is made
+    /// now; a new CSV starts, so one player's frames never go into another's. A clinic child who was playing steps
+    /// aside; the clinic's records stay as they are.
+    func pick(profile id: UUID) {
+        let changed = profiles.active?.id != id || clinic.playingID != nil
+        clinic.playingID = nil
+        profiles.activate(id)
+        childCode = profiles.progress(Self.sessionsCodeKey) ?? ""
+        if changed { playerChanged() }
+    }
+
+    /// A new player joins and plays at once. They have no calibration yet, so one is made now.
+    func addProfile(name: String, avatar: Int) {
+        guard profiles.add(name: name, avatar: avatar) != nil else { return }
+        clinic.playingID = nil
+        childCode = ""
+        playerChanged()
+    }
+
+    private func playerChanged() {
+        dropCalibration(forgetKept: false)
+        gaze = .lost
+        logger = SessionLogger()
+        logTracking()
+        guard eyeTrackingSupported, autoplay == nil else { return }
+        if restoreKeptCalibration() { return }
+        beginCalibration(then: route == .clinic ? .clinic : .menu, reason: restoreMiss)
+    }
+
+    /// The calibration kept before profiles (no clinic child picked) becomes the first player's, so the update
+    /// does not ask for a new one. Once: the old key goes.
+    private func bringKeptCalibrationToProfile() {
+        guard clinic.playingID == nil, let p = profiles.active, profiles.calibration(p.id) == nil,
+              let data = UserDefaults.standard.data(forKey: Self.keptCalibrationKey),
+              let kept = try? JSONDecoder().decode(StoredCalibration.self, from: data), kept.childID == nil else { return }
+        profiles.keep(ProfileCalibration(profileID: p.id, stored: kept))
         UserDefaults.standard.removeObject(forKey: Self.keptCalibrationKey)
+    }
+
+    /// A calibration starts to play: it is watched afresh, for a profile.
+    private func startHealth(distanceM: Double) {
+        calibrationAdvice = nil
+        health = clinic.playingID == nil ? CalibrationHealth(calibrationDistanceM: distanceM) : nil
+    }
+
+    /// Once play shows the calibration no longer fits, the player's kept one is marked poor (the next launch
+    /// calibrates) and the menu offers a new one.
+    private func checkHealth() {
+        guard calibrationAdvice == nil, clinic.playingID == nil, let v = health?.verdict, let p = profiles.active else { return }
+        calibrationAdvice = v
+        profiles.markPoor(p.id, v)
+    }
+
+    /// A game is played with the eyes now, so the grip counts for the calibration's health.
+    private var playingByEye: Bool {
+        switch route {
+        case .game: return mode == .eyes
+        case .winkBeat: return winkBeat?.byEye == true
+        default: return false
+        }
     }
 
     /// Plays on a calibration made before: its models, check, grip and report, with a fresh aim adapter.
@@ -389,6 +476,10 @@ final class AppModel: ObservableObject {
                                      screenMissPt: c.screenMissPt, report: c.report, reference: c.reference,
                                      distanceM: c.distanceM, childID: c.childID, madeAt: c.madeAt, night: nightVision,
                                      screenPt: w, build: Self.build)
+        if clinic.playingID == nil, let p = profiles.active {
+            profiles.keep(ProfileCalibration(profileID: p.id, stored: kept))
+            return
+        }
         guard let data = try? JSONEncoder().encode(kept) else { return }
         UserDefaults.standard.set(data, forKey: Self.keptCalibrationKey)
     }
@@ -398,10 +489,31 @@ final class AppModel: ObservableObject {
     /// the same night vision, on this screen and build, and less than 12 hours old. The aim adapter starts afresh and
     /// learns again in play; the new session CSV says which model plays. False: there is none that fits.
     private func restoreKeptCalibration() -> Bool {
-        guard let w = windowSize, let data = UserDefaults.standard.data(forKey: Self.keptCalibrationKey),
+        restoreMiss = nil
+        guard let w = windowSize else { return false }
+        if clinic.playingID == nil, let p = profiles.active {
+            // A player's own calibration goes with them across launches and updates, for a week, until play finds
+            // it poor (`CalibrationPolicy`).
+            guard let kept = profiles.calibration(p.id) else { return false }
+            switch CalibrationPolicy.verdict(kept, night: nightVision, screenPt: w, now: Date()) {
+            case .use:
+                guard let m = kept.stored.model else { return false }
+                play(kept: kept.stored, model: m)
+                return true
+            case .recalibrate(let why):
+                restoreMiss = why
+                return false
+            }
+        }
+        guard let data = UserDefaults.standard.data(forKey: Self.keptCalibrationKey),
               let kept = try? JSONDecoder().decode(StoredCalibration.self, from: data),
               kept.fits(child: clinic.playingID, night: nightVision, screenPt: w, build: Self.build, now: Date()),
               let m = kept.model else { return false }
+        play(kept: kept, model: m)
+        return true
+    }
+
+    private func play(kept: StoredCalibration, model m: GazeModel) {
         let c = SessionCalibration(model: m, shadow: kept.shadow, head: kept.head, screen: kept.screenFit,
                                    headMissPt: kept.headMissPt, screenMissPt: kept.screenMissPt, report: kept.report,
                                    reference: kept.reference, distanceM: kept.distanceM, childID: kept.childID,
@@ -409,7 +521,7 @@ final class AppModel: ObservableObject {
         adopt(c)
         calibration = c
         logModel()
-        return true
+        startHealth(distanceM: kept.distanceM)
     }
 
     /// Clears the models the frames are read with: a new calibration is being made, or there is none.
@@ -649,6 +761,10 @@ final class AppModel: ObservableObject {
             // The eyes' distance to the screen (cm), smoothed: the probe lays its field out at it.
             let d = f.distance * 100
             faceDistanceCm = faceDistanceCm.map { $0 + (d - $0) * 0.1 } ?? d
+            if health != nil, playingByEye {
+                health?.frame(distanceM: f.distance, time: s.timestamp)
+                checkHealth()
+            }
         }
         if route == .probe, let p = probe, p.phase == .running {
             // Every tracked frame of the probe, with the target it shows, into the session's CSV.
@@ -970,6 +1086,9 @@ final class AppModel: ObservableObject {
         let ok = adapter?.learn(raw: raw, target: target, pose: pose, time: host) ?? false
         logger.label(time: host, source: source, target: target, raw: raw, pitch: pose.pitch, yaw: pose.yaw,
                      accepted: ok, correction: adapter?.correction(pose: pose) ?? .zero)
+        // How far the calibration's own aim was from where the player looked: the calibration's health.
+        health?.label(missCm: raw.distance(to: target) / ptPerCm)
+        checkHealth()
         return ok
     }
 
@@ -1242,7 +1361,7 @@ final class AppModel: ObservableObject {
         guard demoReport == nil else { return }
         #endif
         if restoreKeptCalibration() { return }
-        beginCalibration(then: .menu)
+        beginCalibration(then: .menu, reason: restoreMiss)
     }
 
     /// «Играть глазами» on the meteors: on the session's calibration, or after one when there is none yet.
@@ -1257,7 +1376,9 @@ final class AppModel: ObservableObject {
 
     /// Starts a calibration; its result then leads to `next` (`continueAfterCalibration`). The session's calibration
     /// stays in force until the new one has passed its check dots: leaving before that brings it back.
-    func beginCalibration(then next: Route) {
+    /// `reason`: why it came up on its own, said on its intro (nil: the player asked for it).
+    func beginCalibration(then next: Route, reason: CalibrationPolicy.Reason? = nil) {
+        calibrationReason = reason
         afterCalibration = next
         stash = calibration == nil ? nil : (adapter, logger)
         clearLive()
@@ -1399,6 +1520,7 @@ final class AppModel: ObservableObject {
                                        childID: clinic.playingID, madeAt: Date())
             calibration = c
             keepCalibration(c)
+            startHealth(distanceM: grip.distanceM)
         }
         stash = nil
         route = .result
@@ -1445,8 +1567,16 @@ final class AppModel: ObservableObject {
 
     /// The code the specialist gave the child instead of a name; every play is saved under it. Kept between launches.
     @Published var childCode = UserDefaults.standard.string(forKey: "childCode") ?? "" {
-        didSet { UserDefaults.standard.set(childCode, forKey: "childCode") }
+        didSet {
+            UserDefaults.standard.set(childCode, forKey: "childCode")
+            // A player's code goes with them; a clinic child's comes from the clinic.
+            if clinic.playingID == nil {
+                profiles.setProgress(Self.sessionsCodeKey, currentChildCode.isEmpty ? nil : currentChildCode)
+            }
+        }
     }
+    /// Where a player keeps the code their plays are saved under (their «Занятия»).
+    private static let sessionsCodeKey = "sessions.code"
     var currentChildCode: String { childCode.trimmingCharacters(in: .whitespacesAndNewlines) }
     /// Every play saved on this phone (SessionStore), in the order they ended.
     @Published private(set) var sessions: [SessionSummary] = SessionStore.load()

@@ -21,22 +21,32 @@ enum WinkBeatEyesNote: Equatable {
     var shut: Bool { [.blink, .longBlink, .beatBlink, .blinkOffTarget, .blinkOffBeat].contains(self) }
 }
 
-/// What the player has opened, kept on this phone: the first play is on Easy, the difficulty last played is chosen
-/// next time, and Hard (winks only) opens once Normal has been played to the end without the energy running out.
+/// What the player has opened, kept for the playing profile: the first play is on Easy, the difficulty last played
+/// is chosen next time, and Hard (winks only) opens once Normal has been played to the end without the energy
+/// running out.
 enum WinkBeatProgress {
-    private static let lastKey = "winkbeat.lastDifficulty"
-    private static let hardKey = "winkbeat.hardOpen"
+    static let lastKey = "winkbeat.lastDifficulty"
+    static let hardKey = "winkbeat.hardOpen"
+    /// The players on this phone (AppModel sets it at launch); the phone's defaults before that.
+    static weak var profiles: ProfilesModel?
 
-    static var last: WinkBeatDifficulty {
-        UserDefaults.standard.string(forKey: lastKey).flatMap(WinkBeatDifficulty.init(rawValue:)) ?? .easy
+    private static func value(_ key: String) -> String? {
+        if let p = profiles { return p.progress(key) }
+        return UserDefaults.standard.string(forKey: key)
     }
 
-    static var hardOpen: Bool { UserDefaults.standard.bool(forKey: hardKey) }
+    private static func set(_ key: String, _ value: String) {
+        if let p = profiles { p.setProgress(key, value) } else { UserDefaults.standard.set(value, forKey: key) }
+    }
+
+    static var last: WinkBeatDifficulty { value(lastKey).flatMap(WinkBeatDifficulty.init(rawValue:)) ?? .easy }
+
+    static var hardOpen: Bool { value(hardKey) == "1" }
 
     static func played(_ play: WinkBeatPlay) {
         let d = play.rules.difficulty
-        UserDefaults.standard.set(d.rawValue, forKey: lastKey)
-        if d == .normal, play.finished, !play.failed { UserDefaults.standard.set(true, forKey: hardKey) }
+        set(lastKey, d.rawValue)
+        if d == .normal, play.finished, !play.failed { set(hardKey, "1") }
     }
 }
 

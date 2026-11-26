@@ -80,7 +80,13 @@ public struct StoredCalibration: Codable, Sendable {
     public func fits(child: UUID?, night: Bool, screenPt: Vec2, build: String, now: Date) -> Bool {
         let age = now.timeIntervalSince(madeAt)
         guard childID == child, self.night == night, self.build == build, age > -60, age < Self.maxAgeSec,
-              self.screenPt.count == 2, model != nil else { return false }
+              model != nil else { return false }
+        return sameScreen(screenPt)
+    }
+
+    /// Made on a screen of this size (pt), within a point, either way round.
+    public func sameScreen(_ screenPt: Vec2) -> Bool {
+        guard self.screenPt.count == 2 else { return false }
         let kept = self.screenPt.sorted(), here = [screenPt.x, screenPt.y].sorted()
         return abs(kept[0] - here[0]) <= 1 && abs(kept[1] - here[1]) <= 1
     }
