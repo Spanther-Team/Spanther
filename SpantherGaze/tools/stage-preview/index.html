@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#cfe6f7}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body><script type="module">
+import * as THREE from 'three';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+const name = new URLSearchParams(location.search).get('s') || 'moles';
+const d = await (await fetch(`./${name}.json`)).json();
+const [W, H] = d.screen;
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setPixelRatio(2); r.setSize(W, H); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFShadowMap;
+r.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xcfe6f7);
+scene.fog = new THREE.Fog(0xcfe6f7, 16, 32);
+const cam = new THREE.PerspectiveCamera(d.fov * 180 / Math.PI, W / H, 0.3, 90);
+cam.position.set(...d.eye); cam.lookAt(new THREE.Vector3(...d.target));
+const sun = new THREE.DirectionalLight(0xffffff, 2.6);
+const t = new THREE.Vector3(...d.toward).normalize();
+sun.position.copy(t.clone().multiplyScalar(30)); sun.target.position.set(0, 0, -1);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 80 });
+sun.shadow.radius = 3; sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target, new THREE.HemisphereLight(0xcfe6f7, 0x5a6fb0, 1.1));
+const ramp = new THREE.DataTexture(new Uint8Array([90, 90, 90, 255, 190, 190, 190, 255, 255, 255, 255, 255]), 3, 1);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
+const geos = d.meshes.map(m => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(m.p, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(m.n, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(m.c, 3));
+  g.setIndex(m.i); return g;
+});
+for (const dr of d.draws) {
+  let mat;
+  const tint = new THREE.Color(dr.tint[0], dr.tint[1], dr.tint[2]);
+  if (dr.style === 1) mat = new THREE.MeshBasicMaterial({ vertexColors: true, color: tint });
+  else if (dr.style === 2) mat = new THREE.MeshBasicMaterial({ vertexColors: true, color: tint, transparent: true, opacity: dr.tint[3], depthWrite: false });
+  else mat = new THREE.MeshToonMaterial({ vertexColors: true, color: tint, gradientMap: ramp, transparent: dr.style === 3, opacity: dr.tint[3], depthWrite: dr.style !== 3 });
+  mat.userData.outlineParameters = dr.outline > 0 ? { thickness: 0.0035 * dr.outline / 1.6, color: [0.012, 0.01, 0.009], alpha: 1, visible: true } : { visible: false };
+  const mesh = new THREE.Mesh(geos[dr.mesh], mat);
+  mesh.matrixAutoUpdate = false; mesh.matrix.fromArray(dr.m);
+  mesh.castShadow = dr.shadow; mesh.receiveShadow = true;
+  if (dr.style === 2 || dr.style === 3) mesh.renderOrder = 10;
+  scene.add(mesh);
+}
+const fx = new OutlineEffect(r, { defaultThickness: 0.004, defaultColor: [0.012, 0.01, 0.009] });
+fx.render(scene, cam);
+window.__ready = true;
+</script></body></html>

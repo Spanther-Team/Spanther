@@ -44,6 +44,7 @@ struct ResultView: View {
         switch app.afterCalibration {
         case .rhythm: return L("К ритм-режиму")
         case .winkBeat: return "Wink Beat"
+        case .arcade(let g): return g.title
         case .pursuit: return L("К разминке")
         case .probe: return L("К пробе")
         case .game: return L("Играть")

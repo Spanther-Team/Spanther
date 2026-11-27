@@ -76,6 +76,8 @@ struct RootView: View {
                 case .syncCheck: SyncCheckView(bot: app.autoplay == "sync")
                 case .winkBeat:
                     if let w = app.winkBeat { WinkBeatView(session: w) }
+                case .arcade:
+                    if let a = app.arcade { ArcadeView(session: a) }
                 }
             }
             .transition(screenTransition)
@@ -116,7 +118,7 @@ struct RootView: View {
             Palette.space.ignoresSafeArea()
         case .probe:
             ProbeLook.paper.ignoresSafeArea()
-        case .calibration, .check, .rhythm, .pursuit, .game, .syncCheck, .winkBeat:
+        case .calibration, .check, .rhythm, .pursuit, .game, .syncCheck, .winkBeat, .arcade:
             Atlas.paper.ignoresSafeArea()
         case .menu, .result, .clinic:
             ZStack {

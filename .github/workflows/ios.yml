@@ -522,6 +522,26 @@ jobs:
           then pass "wink beat: $(tail -n 1 "$OUT/winkbeat.check.txt")"; else fail "wink beat: $(tail -n 1 "$OUT/winkbeat.check.txt")"; fi
           xcrun simctl terminate "$UDID" "$BID" || true
 
+          # The blink arcades in 3D (-SpantherAutoplay moles / fishing): the bot looks at the level choice, picks
+          # level 3, plays a 40 s round by finger through the rules and the Metal toon stage, and prints
+          # ARCADE_RESULT <game> <stars> <score> <accuracy> on the results.
+          for game in moles fishing; do
+            xcrun simctl launch --stdout="$OUT/$game.stdout.log" --stderr="$OUT/$game.stderr.log" "$UDID" "$BID" -SpantherAutoplay "$game" -SpantherArcadeSec 40
+            sleep 2; shot "$game-1-levels"
+            sleep 9; shot "$game-2-play"
+            sleep 9; shot "$game-3-play"
+            for i in $(seq 1 30); do
+              if grep -q ARCADE_RESULT "$OUT/$game.stdout.log"; then break; fi
+              sleep 2
+            done
+            sleep 1; shot "$game-4-results"
+            if running; then pass "$game: app running"; else fail "$game: app not running"; fi
+            line=$(grep ARCADE_RESULT "$OUT/$game.stdout.log" || true)
+            if echo "$line" | grep -qE "ARCADE_RESULT $game [1-3] "; then pass "$game: $line"
+            else fail "$game: the bot's round earned no star (${line:-no ARCADE_RESULT})"; fi
+            xcrun simctl terminate "$UDID" "$BID" || true
+          done
+
           # The report screens with made-up plays (-SpantherDemoReport): the summary after a meteor play, a
           # child's history, and the settings sheet.
           for page in summary history settings; do
@@ -543,7 +563,7 @@ jobs:
               if running; then pass "report $page in $lang: app running"; else fail "report $page in $lang: app not running"; fi
               xcrun simctl terminate "$UDID" "$BID" || true
             done
-            for mode in rhythm eyes pursuit sync winkbeat; do
+            for mode in rhythm eyes pursuit sync winkbeat moles fishing; do
               xcrun simctl launch "$UDID" "$BID" -SpantherAutoplay "$mode" -SpantherGateLanguage "$lang"
               sleep 5; shot "lang-$lang-$mode-a"; sleep 10; shot "lang-$lang-$mode-b"
               if running; then pass "$mode in $lang: app running"; else fail "$mode in $lang: app not running"; fi
