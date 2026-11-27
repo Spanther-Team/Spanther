@@ -65,7 +65,7 @@ struct MenuView: View {
                 app.addProfile(name: new.name, avatar: new.avatar)
             }
         }) {
-            ProfilesSheet(profiles: app.profiles, clinic: app.clinic,
+            ProfilesSheet(profiles: app.profiles, clinic: app.clinic, account: app.account,
                           onPick: { pendingPick = $0 }, onAdd: { pendingAdd = (name: $0, avatar: $1) })
         }
         .onAppear {
@@ -74,6 +74,7 @@ struct MenuView: View {
             #if DEBUG
             if app.demoReport == "history" { DispatchQueue.main.async { report = .history } }
             if app.demoReport == "settings" { DispatchQueue.main.async { showSettings = true } }
+            if AccountModel.debugStep != nil { DispatchQueue.main.async { showProfiles = true } }
             #endif
         }
         .onChange(of: app.lastSummary) { _ in showLastSummary() }

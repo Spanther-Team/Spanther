@@ -136,6 +136,71 @@ public struct ProfileBook: Codable, Equatable, Sendable {
         profiles[i].progress[key] = value
         profiles[i].updatedAt = now
     }
+
+    // MARK: Sync
+
+    /// Marks the player who still has the first launch's name ("1"; "0" once a name was typed).
+    public static let defaultNameKey = "name.default"
+
+    /// The first launch's player as it was made: never named, nothing kept for it.
+    public static func isPlaceholder(_ p: PlayerProfile) -> Bool {
+        p.deletedAt == nil && p.progress[defaultNameKey] == "1"
+            && p.progress.allSatisfy { $0.key == defaultNameKey || $0.value.isEmpty || $0.value == "0" }
+    }
+
+    /// Takes in the account's copies with the database's own rules (backend migration, profiles_merge), to the
+    /// second as the database keeps times: the newer change wins name, colour and birth year, the account's copy on
+    /// a tie; progress keys from both stay, the newer side's value winning a key both have; a deleted player stays
+    /// deleted. A player new to the phone joins it. True when anything changed.
+    @discardableResult
+    public mutating func merge(_ others: [PlayerProfile]) -> Bool {
+        var changed = false
+        var joined = false
+        for o in others {
+            guard let i = profiles.firstIndex(where: { $0.id == o.id }) else {
+                profiles.append(o)
+                changed = true
+                joined = true
+                continue
+            }
+            let mine = profiles[i]
+            var m = mine
+            if o.updatedAt.timeIntervalSince1970.rounded(.down) >= mine.updatedAt.timeIntervalSince1970.rounded(.down) {
+                m.name = o.name
+                m.avatar = o.avatar
+                m.birthYear = o.birthYear
+                m.progress = mine.progress.merging(o.progress) { _, theirs in theirs }
+                m.updatedAt = o.updatedAt
+            } else {
+                m.progress = o.progress.merging(mine.progress) { _, ours in ours }
+            }
+            m.deletedAt = mine.deletedAt ?? o.deletedAt
+            if m != mine {
+                profiles[i] = m
+                changed = true
+            }
+        }
+        if joined {
+            profiles = profiles.enumerated().sorted { a, b in
+                a.element.createdAt != b.element.createdAt ? a.element.createdAt < b.element.createdAt : a.offset < b.offset
+            }.map(\.element)
+        }
+        if active == nil, let first = visible.first {
+            activeID = first.id
+            changed = true
+        }
+        return changed
+    }
+
+    /// Takes players off this phone entirely, with no tombstone: they stay in their account. When one was
+    /// playing, the oldest left plays (none when none is left: `ensureOne` makes one).
+    @discardableResult
+    public mutating func drop(_ ids: Set<UUID>) -> Bool {
+        let before = profiles.count
+        profiles.removeAll { ids.contains($0.id) }
+        if let a = activeID, profile(a) == nil { activeID = visible.first?.id }
+        return profiles.count != before
+    }
 }
 
 extension GazeFeatures {
@@ -307,6 +372,27 @@ public struct ProfileStore: Sendable {
 
     public func removeCalibration(_ id: UUID) {
         try? FileManager.default.removeItem(at: calibrationURL(id))
+    }
+
+    private var syncURL: URL { root.appendingPathComponent("sync.json") }
+    private var playsURL: URL { root.appendingPathComponent("plays.json") }
+
+    public func loadSyncState() -> ProfileSyncState {
+        (try? Data(contentsOf: syncURL)).flatMap { try? Self.decoder.decode(ProfileSyncState.self, from: $0) }
+            ?? ProfileSyncState()
+    }
+
+    public func save(_ state: ProfileSyncState) throws {
+        try write(Self.encoder.encode(state), to: syncURL)
+    }
+
+    /// The plays waiting to go to the account.
+    public func loadPlays() -> PlayQueue {
+        (try? Data(contentsOf: playsURL)).flatMap { try? Self.decoder.decode(PlayQueue.self, from: $0) } ?? PlayQueue()
+    }
+
+    public func save(_ plays: PlayQueue) throws {
+        try write(Self.encoder.encode(plays), to: playsURL)
     }
 
     private func write(_ data: Data, to url: URL) throws {

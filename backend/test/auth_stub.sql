@@ -12,7 +12,7 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth to anon, authenticated, supabase_auth_admin;
 grant execute on function auth.uid() to anon, authenticated;
-grant select, insert, delete on auth.users to supabase_auth_admin;
+grant select, insert, update, delete on auth.users to supabase_auth_admin;
 
 -- Supabase grants the API roles everything on new tables in public and leaves the rest to row level security.
 grant usage on schema public to anon, authenticated, service_role;

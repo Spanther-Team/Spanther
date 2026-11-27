@@ -14,5 +14,5 @@ for _ in $(seq 60); do
 done
 run() { docker exec -i "$name" psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -q "$@"; }
 run < test/auth_stub.sql
-run < supabase/migrations/20261126200000_profiles.sql
+for f in supabase/migrations/*.sql; do run < "$f"; done
 run < test/rls_test.sql

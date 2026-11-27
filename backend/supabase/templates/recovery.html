@@ -1,0 +1,21 @@
+<!-- Supabase → Authentication → Email Templates → Reset Password. The app asks for the code, then a new password. -->
+<div style="font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1D1A17; max-width: 420px">
+{{ if eq .Data.lang "kk" }}
+  <h2 style="margin: 0 0 12px">SPANTHER: құпиясөзді қалпына келтіру</h2>
+  <p>Жаңа құпиясөз орнату үшін қолданбаға осы кодты енгізіңіз:</p>
+{{ else if eq .Data.lang "en" }}
+  <h2 style="margin: 0 0 12px">SPANTHER: reset your password</h2>
+  <p>Enter this code in the app to set a new password:</p>
+{{ else }}
+  <h2 style="margin: 0 0 12px">SPANTHER: новый пароль</h2>
+  <p>Чтобы задать новый пароль, введите этот код в приложении:</p>
+{{ end }}
+  <p style="font-size: 34px; font-weight: 700; letter-spacing: 8px; margin: 16px 0">{{ .Token }}</p>
+{{ if eq .Data.lang "kk" }}
+  <p style="color: #6B6B6B">Код бір сағат жарамды. Егер сіз сұрамасаңыз, құпиясөз өзгермейді.</p>
+{{ else if eq .Data.lang "en" }}
+  <p style="color: #6B6B6B">The code works for one hour. If you did not ask for it, your password stays as it is.</p>
+{{ else }}
+  <p style="color: #6B6B6B">Код действует один час. Если вы не просили новый пароль, старый остаётся в силе.</p>
+{{ end }}
+</div>
