@@ -10,7 +10,18 @@
 set role supabase_auth_admin;
 insert into auth.users (id, email) values (:A, 'a@test'), (:B, 'b@test');
 reset role;
-do $$ begin assert (select count(*) from public.accounts where role = 'user') = 2, 'every sign-up gets a user account'; end $$;
+do $$ begin
+    assert (select count(*) from public.accounts where role = 'user') = 2, 'every sign-up gets a user account';
+    assert (select email from public.accounts where id = 'b0000000-0000-4000-8000-000000000002') = 'b@test',
+           'the account keeps the sign-in email';
+end $$;
+set role supabase_auth_admin;
+update auth.users set email = 'b2@test' where id = :B;
+reset role;
+do $$ begin
+    assert (select email from public.accounts where id = 'b0000000-0000-4000-8000-000000000002') = 'b2@test',
+           'a changed sign-in email is copied';
+end $$;
 
 -- A adds two players. B neither sees them nor takes them.
 set role authenticated;
@@ -159,6 +170,13 @@ do $$ begin
 end $$;
 do $$ begin
     begin
+        update public.accounts set email = 'other@test' where id = 'a0000000-0000-4000-8000-000000000001';
+        raise exception 'a user changed the copied email';
+    exception when insufficient_privilege then null;
+    end;
+end $$;
+do $$ begin
+    begin
         update public.accounts set role = 'admin' where id = 'a0000000-0000-4000-8000-000000000001';
         raise exception 'a user made themselves admin';
     exception when insufficient_privilege then null;
@@ -183,6 +201,8 @@ do $$ begin
     assert (select premium_until from public.accounts where id = 'b0000000-0000-4000-8000-000000000002') = '2027-11-26Z',
            'the admin gives premium';
     assert (select count(*) from public.accounts) = 2, 'the admin sees every account';
+    assert (select id from public.accounts where lower(email) = 'b2@test') = 'b0000000-0000-4000-8000-000000000002',
+           'the admin finds a person by email';
     assert (select count(*) from public.admin_log
             where action = 'premium' and admin_id = 'a0000000-0000-4000-8000-000000000001') = 1, 'the change is in the log';
     assert (select count(*) from public.admin_log where action = 'role' and admin_id is null) = 1,
@@ -223,9 +243,37 @@ do $$ begin
     end;
 end $$;
 
--- Deleting the account (the delete-account function deletes the auth user) removes its players and plays at once;
--- the log keeps the change, without the admin.
+-- Deleting the account from the app: only one's own, only signed in.
+do $$ begin
+    begin
+        perform public.delete_my_account();
+        raise exception 'anon deleted an account';
+    exception when insufficient_privilege then null;
+    end;
+end $$;
+set role authenticated;
+do $$ begin
+    begin
+        perform public.delete_my_account();
+        raise exception 'delete_my_account ran without a signed-in user';
+    exception when insufficient_privilege then null;
+    end;
+end $$;
+set request.jwt.claim.sub = 'b0000000-0000-4000-8000-000000000002';
+select public.delete_my_account() \g /dev/null
 reset role;
+do $$ begin
+    assert (select count(*) from auth.users where id = 'b0000000-0000-4000-8000-000000000002') = 0, 'B deleted their sign-in';
+    assert (select count(*) from public.accounts where id = 'b0000000-0000-4000-8000-000000000002') = 0,
+           'and with it their account';
+    assert (select count(*) from public.accounts where id = 'a0000000-0000-4000-8000-000000000001') = 1,
+           'the account of A stays';
+    assert (select count(*) from public.profiles) = 2, 'the players of A stay';
+end $$;
+
+-- Deleting the account (as delete_my_account or the Supabase panel do) removes its players and plays at once;
+-- the log keeps the change, without the admin.
+set request.jwt.claim.sub = '';
 set role supabase_auth_admin;
 delete from auth.users where id = :A;
 reset role;

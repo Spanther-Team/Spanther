@@ -2,14 +2,16 @@ import Foundation
 import SwiftUI
 
 /// The players on this phone (GazeCore `ProfileBook`, kept by `ProfileStore` in Application Support/profiles) for
-/// the screens, and each player's kept calibration. Plain files on the phone: nothing here leaves it (the backend
-/// sync, when it comes, sends profiles and progress, never a calibration). Main thread.
+/// the screens, and each player's kept calibration. Plain files on the phone; once an adult signs in,
+/// `AccountModel` sends the players and their progress to the account, never a calibration. Main thread.
 final class ProfilesModel: ObservableObject {
     @Published private(set) var book: ProfileBook
     /// When each player's kept calibration was made, and whether play found it poor (for the list).
     @Published private(set) var calibrations: [UUID: (madeAt: Date, poor: Bool)] = [:]
 
     private let store: ProfileStore?
+    /// Called after the players changed on this phone, for the account's sync.
+    var onChange: (() -> Void)?
 
     /// The colours a player can pick, in `PlayerProfile.avatar` order.
     static let colours: [Color] = [Atlas.sky, Atlas.emerald, Atlas.gold, Atlas.vermilion, Atlas.energy, Atlas.ink,
@@ -21,7 +23,7 @@ final class ProfilesModel: ObservableObject {
 
     /// Marks the player who still has the first launch's name. That name is shown in the app's language of the
     /// moment: it was made before the start screen's choice, often in the phone's own language.
-    static let defaultNameKey = "name.default"
+    static let defaultNameKey = ProfileBook.defaultNameKey
 
     /// The name on screen.
     static func name(_ p: PlayerProfile) -> String { p.progress[defaultNameKey] == "1" ? L("Игрок {0}", 1) : p.name }
@@ -33,9 +35,8 @@ final class ProfilesModel: ObservableObject {
         store = ProfileStore.defaultRoot.map { ProfileStore(root: $0) }
         var b = store?.loadBook() ?? ProfileBook()
         let first = b.profiles.isEmpty
-        if b.ensureOne(defaultName: L("Игрок {0}", 1), now: Date()) {
+        if Self.ensurePlayer(&b) {
             if first { Self.bringOldProgress(into: &b) }
-            b.setProgress(Self.defaultNameKey, "1", now: Date())
             try? store?.save(b)
         }
         book = b
@@ -90,6 +91,36 @@ final class ProfilesModel: ObservableObject {
         guard b != book else { return }
         book = b
         try? store?.save(b)
+        onChange?()
+    }
+
+    /// One player at least, playing; a new one has the first launch's name. True when anything changed.
+    @discardableResult
+    private static func ensurePlayer(_ b: inout ProfileBook) -> Bool {
+        let none = b.visible.isEmpty
+        guard b.ensureOne(defaultName: L("Игрок {0}", 1), now: Date()) else { return false }
+        if none { b.setProgress(defaultNameKey, "1", now: Date()) }
+        return true
+    }
+
+    // MARK: The account's sync
+
+    /// Takes the account's players in (GazeCore `ProfileSync.takeIn`) and returns the rows the account still
+    /// needs. A fresh phone's untouched first player who gives way loses their calibration; the players of another
+    /// account who leave the phone keep theirs here, for when that account signs in again.
+    func takeIn(_ server: [PlayerProfile], account: UUID, state: inout ProfileSyncState,
+                played: Set<UUID>) -> [ProfileRow] {
+        let otherAccount = state.accountID != nil && state.accountID != account ? state.synced : []
+        var b = book
+        let gone = ProfileSync.takeIn(server, account: account, book: &b, state: &state, played: played)
+        Self.ensurePlayer(&b)
+        for id in gone where !otherAccount.contains(id) { store?.removeCalibration(id) }
+        if b != book {
+            book = b
+            try? store?.save(b)
+            reloadCalibrations()
+        }
+        return ProfileSync.toSend(book, server: server)
     }
 
     // MARK: Calibrations

@@ -54,6 +54,7 @@ struct ProfileChip: View {
 struct ProfilesSheet: View {
     @ObservedObject var profiles: ProfilesModel
     @ObservedObject var clinic: ClinicModel
+    @ObservedObject var account: AccountModel
     let onPick: (UUID) -> Void
     let onAdd: (String, Int) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -64,8 +65,25 @@ struct ProfilesSheet: View {
     @State private var draftName = ""
     @State private var draftAvatar = 0
     @State private var deleting: PlayerProfile?
+    /// The account's page instead of the list.
+    @State private var showAccount = AccountModel.debugStep != nil
 
     var body: some View {
+        Group {
+            if showAccount {
+                AccountPanel(account: account, back: { showAccount = false }, done: { dismiss() })
+            } else {
+                players
+            }
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Atlas.paper.ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+    }
+
+    private var players: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Text(L("Игроки")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
@@ -89,23 +107,46 @@ struct ProfilesSheet: View {
                 }
                 .padding(.vertical, 4)
             }
-            Text(L("Игроки и их калибровка хранятся только на этом телефоне. У каждого игрока своя калибровка: игра просит новую через неделю или когда точность падает."))
-                .font(Atlas.caption)
-                .foregroundStyle(Atlas.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
+            footer
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Atlas.paper.ignoresSafeArea())
-        .environment(\.colorScheme, .light)
         .confirmationDialog(L("Удалить игрока?"), isPresented: Binding(get: { deleting != nil },
                                                                      set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible, presenting: deleting) { p in
             Button(L("Удалить {0}", ProfilesModel.name(p)), role: .destructive) { onDelete(p.id) }
             Button(L("Отмена"), role: .cancel) {}
         } message: { _ in
-            Text(L("Калибровка этого игрока тоже удалится."))
+            Text(account.session == nil ? L("Калибровка этого игрока тоже удалится.")
+                 : L("Игрок удалится и из аккаунта, на всех телефонах. Его калибровка тоже удалится."))
+        }
+    }
+
+    /// Where the players are kept, and the way to the account when the app has one.
+    @ViewBuilder private var footer: some View {
+        if account.backend == nil {
+            Text(L("Игроки и их калибровка хранятся только на этом телефоне. У каждого игрока своя калибровка: игра просит новую через неделю или когда точность падает."))
+                .font(Atlas.caption)
+                .foregroundStyle(Atlas.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.session?.email ?? L("Без аккаунта: игроки только на этом телефоне"))
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Atlas.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(account.session == nil
+                         ? L("Войдите, чтобы игроки и их прогресс были на всех ваших телефонах. Калибровка у каждого игрока своя и всегда остаётся на этом телефоне.")
+                         : AccountPanel.status(account.status))
+                        .font(Atlas.caption)
+                        .foregroundStyle(account.endedElsewhere ? Atlas.vermilion : Atlas.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button { showAccount = true } label: { Text(account.session == nil ? L("Войти") : L("Аккаунт")) }
+                    .buttonStyle(AtlasSecondaryButton())
+                    .frame(width: 150)
+            }
         }
     }
 

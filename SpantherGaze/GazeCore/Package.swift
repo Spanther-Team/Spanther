@@ -16,6 +16,8 @@ let package = Package(
         // `swift run GazeReplay <session.csv>`: replays an exported session through the current GazeCore code.
         // Not part of the app, which compiles only Sources/GazeCore.
         .executableTarget(name: "GazeReplay", dependencies: ["GazeCore"]),
+        // The sign-in and sync against a real Supabase Auth and PostgREST in Docker: backend/test/e2e.sh.
+        .executableTarget(name: "BackendCheck", dependencies: ["GazeCore"]),
         // Feel: the math of the burst (geometry, fracture, cracks, motion, sound synthesis, shader sources).
         // Plain Swift like GazeCore, and it does not import GazeCore; the app compiles both into one module.
         .target(name: "Feel"),

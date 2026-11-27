@@ -186,6 +186,15 @@ jobs:
           if running; then pass "menu: app running"; else fail "menu: app not running"; fi
           xcrun simctl terminate "$UDID" "$BID" || true
 
+          # The sign-in screens in the players sheet (a stand-in address; nothing is sent).
+          for step in signIn code; do
+            xcrun simctl launch --stdout="$OUT/account-$step.stdout.log" --stderr="$OUT/account-$step.stderr.log" \
+              "$UDID" "$BID" -SpantherGate pass -SpantherAccount "$step"
+            sleep 8; shot "00-account-$step"
+            if running; then pass "account $step: app running"; else fail "account $step: app not running"; fi
+            xcrun simctl terminate "$UDID" "$BID" || true
+          done
+
           for mode in eyes touch; do
             # Levels last 2:00 in the app; -SpantherLevelSec 40 lets level 1 end inside this minute.
             xcrun simctl launch --stdout="$OUT/$mode.stdout.log" --stderr="$OUT/$mode.stderr.log" "$UDID" "$BID" -SpantherAutoplay "$mode" -SpantherLevelSec 40

@@ -89,6 +89,7 @@ final class AppModel: ObservableObject {
             if route == .game, oldValue != .game { beginMeteorPlay() }
             if oldValue == .pursuit, route != .pursuit { dropPursuit() }
             if oldValue == .probe, route != .probe { dropProbe() }
+            if route == .menu, playerChangedInSync { playerChangedBySync() }
             updateAmbient()
         }
     }
@@ -167,6 +168,11 @@ final class AppModel: ObservableObject {
     /// The players on this phone and the calibration each one keeps (GazeCore ProfileStore). A clinic child picked
     /// on «Кто играет?» plays instead of them, on the clinic's own rules.
     let profiles = ProfilesModel()
+    /// The adult's account, when one signed in: it syncs the players, their progress and their plays (never a
+    /// clinic child's).
+    lazy var account = AccountModel(profiles: profiles)
+    /// The sync changed who plays while a game was on: taken in back at the menu.
+    private var playerChangedInSync = false
     /// Play found that the calibration no longer fits the player (`CalibrationHealth`): the menu offers a new one.
     @Published private(set) var calibrationAdvice: CalibrationHealth.Reason?
     /// Why the calibration screen came up on its own (the player's kept one is a week old, was poor, ...), for
@@ -335,6 +341,7 @@ final class AppModel: ObservableObject {
         clinic.migrate(sessions)
         #endif
         WinkBeatProgress.profiles = profiles
+        account.onActiveChanged = { [weak self] in self?.playerChangedBySync() }
         bringKeptCalibrationToProfile()
         // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree. A player
         // plays under their own; the code typed before profiles becomes the first player's.
@@ -397,6 +404,24 @@ final class AppModel: ObservableObject {
         clinic.playingID = nil
         childCode = ""
         playerChanged()
+    }
+
+    /// The account's sync changed who plays (`AccountModel.onActiveChanged`). Back at the menu their kept
+    /// calibration comes in when it still fits; without one, the next game by eye calibrates first. A clinic child
+    /// playing is not touched.
+    private func playerChangedBySync() {
+        guard clinic.playingID == nil else { return }
+        guard route == .menu else {
+            playerChangedInSync = true
+            return
+        }
+        playerChangedInSync = false
+        childCode = profiles.progress(Self.sessionsCodeKey) ?? ""
+        dropCalibration(forgetKept: false)
+        gaze = .lost
+        logger = SessionLogger()
+        logTracking()
+        if eyeTrackingSupported, autoplay == nil { _ = restoreKeptCalibration() }
     }
 
     private func playerChanged() {
@@ -597,6 +622,7 @@ final class AppModel: ObservableObject {
 
     func scenePhaseChanged(active: Bool) {
         self.active = active
+        if active { account.syncSoon(after: 1) }
         applyBrightness()
         updateAmbient()
         // A warm-up that was interrupted is not a minute of following: it ends without a result. Nor is a probe.
@@ -919,7 +945,9 @@ final class AppModel: ObservableObject {
         w.onPlayed = { [weak self] target, host in
             if teach { _ = self?.learnLabel(target: target, before: host, source: "winkbeat") }
         }
+        var began: (host: Double, date: Date)?
         w.onBegin = { [weak self] start, play in
+            began = (start, Date())
             guard let self, let map else { return }
             self.logger.rhythmStart(time: start, track: map.id, level: "winkbeat-\(play.rules.difficulty.rawValue)",
                                     beatSec: map.beatSec, audioLatency: AVAudioSession.sharedInstance().outputLatency,
@@ -932,8 +960,20 @@ final class AppModel: ObservableObject {
         }
         w.onEnd = { [weak self] host, play in
             self?.logger.rhythmEnd(time: host, score: play.score, accuracy: play.accuracy, latency: play.latencySec)
+            if let began { self?.keepWinkBeat(play, byEye: byEye, started: began.date, seconds: host - began.host) }
         }
         return w
+    }
+
+    /// A player's Wink Beat play goes to the account (it keeps no session summary on the phone); a clinic child's
+    /// and the bot's do not.
+    private func keepWinkBeat(_ play: WinkBeatPlay, byEye: Bool, started: Date, seconds: Double) {
+        guard clinic.playingID == nil, autoplay == nil, let p = profiles.active else { return }
+        let judged = play.results.compactMap { $0 }
+        account.queue(PlayRow(profileID: p.id, game: "winkbeat", difficulty: play.rules.difficulty.rawValue,
+                              byEye: byEye, startedAt: started, durationSec: seconds, score: play.score,
+                              accuracy: judged.isEmpty ? nil : play.accuracy,
+                              hits: judged.filter { $0 != .miss }.count, misses: play.count(.miss), build: Self.build))
     }
 
     // MARK: rhythm mode
@@ -1652,6 +1692,11 @@ final class AppModel: ObservableObject {
     private func keep(_ s: SessionSummary) {
         if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
         SessionStore.save(sessions)
+        // A player's play goes to the account; a clinic child's stays on the phone.
+        if clinic.playingID == nil, autoplay == nil, let p = profiles.active,
+           let row = PlayRow(s, profileID: p.id, build: Self.build) {
+            account.queue(row)
+        }
     }
 
     /// Deletes the plays of one child (every play when the code is empty) from the phone.
