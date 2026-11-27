@@ -102,6 +102,7 @@ struct MenuView: View {
             HStack(alignment: .top, spacing: 12) {
                 meteorPlate
                 winkBeatPlate
+                arcadePlate
                 pursuitPlate
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -322,9 +323,22 @@ struct MenuView: View {
               })
     }
 
+    /// The blink arcades in 3D (Aziz, 2026-11-27). Played by eye where the phone tracks faces, else by finger.
+    private var arcadePlate: some View {
+        plate(L("Аркады"), L("Моргни по кроту, когда он вылезет из норы. Или поймай рыбу: смотри, пока не клюнет, и моргни."),
+              accent: Atlas.energy, order: 3,
+              art: { ArcadeVignette() },
+              actions: {
+                  Button { app.openArcade(.moles) } label: { buttonText(L("Кроты")) }
+                      .buttonStyle(AtlasPrimaryButton(fill: Atlas.energy))
+                  Button { app.openArcade(.fishing) } label: { buttonText(L("Рыбалка")) }
+                      .buttonStyle(AtlasPrimaryButton(fill: Atlas.sky))
+              })
+    }
+
     private var pursuitPlate: some View {
         plate(L("Разминка"), L("Минута для глаз: следи за точкой, пока она плывёт по экрану."),
-              accent: Atlas.emerald, order: 3,
+              accent: Atlas.emerald, order: 4,
               art: { PursuitVignette() },
               actions: {
                   Button { app.openPursuit(byEye: true) } label: { buttonText(L("Начать")) }
@@ -592,6 +606,37 @@ private struct NoteVignette: View {
 }
 
 /// The warm-up on the menu: a dot gliding along a figure of eight, as it does in the last part of the minute.
+/// A mole peeking out of its hole and ducking back, on a loop.
+private struct ArcadeVignette: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+            let now = CACurrentMediaTime()
+            Canvas { g, size in
+                let cycle = 2.4, t = now.truncatingRemainder(dividingBy: cycle)
+                let up: Double = t < 0.25 ? t / 0.25 : (t < 1.6 ? 1 : (t < 1.85 ? 1 - (t - 1.6) / 0.25 : 0))
+                let w = size.width, h = size.height
+                let hole = CGRect(x: w * 0.12, y: h * 0.66, width: w * 0.76, height: h * 0.26)
+                g.fill(Path(ellipseIn: hole.insetBy(dx: -3, dy: -2)), with: .color(Color(red: 0.6, green: 0.42, blue: 0.24)))
+                g.stroke(Path(ellipseIn: hole.insetBy(dx: -3, dy: -2)), with: .color(Atlas.ink), lineWidth: 2)
+                g.fill(Path(ellipseIn: hole), with: .color(Color(red: 0.23, green: 0.15, blue: 0.09)))
+                var mole = g
+                mole.clip(to: Path(CGRect(x: 0, y: 0, width: w, height: hole.midY)))
+                let r = w * 0.27, cy = hole.midY + r * 0.2 - CGFloat(up) * r * 1.25
+                let body = CGRect(x: w / 2 - r, y: cy - r, width: 2 * r, height: 2.4 * r)
+                mole.fill(Path(ellipseIn: body), with: .color(Color(red: 0.54, green: 0.35, blue: 0.24)))
+                mole.stroke(Path(ellipseIn: body), with: .color(Atlas.ink), lineWidth: 2)
+                for sx in [-1.0, 1.0] {
+                    let e = CGRect(x: w / 2 + CGFloat(sx) * r * 0.38 - 2.5, y: cy - r * 0.35, width: 5, height: 6)
+                    mole.fill(Path(ellipseIn: e), with: .color(Atlas.ink))
+                }
+                let nose = CGRect(x: w / 2 - r * 0.3, y: cy - r * 0.05, width: r * 0.6, height: r * 0.4)
+                mole.fill(Path(ellipseIn: nose), with: .color(Color(red: 0.92, green: 0.65, blue: 0.6)))
+                mole.stroke(Path(ellipseIn: nose), with: .color(Atlas.ink), lineWidth: 1.5)
+            }
+        }
+    }
+}
+
 private struct PursuitVignette: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in

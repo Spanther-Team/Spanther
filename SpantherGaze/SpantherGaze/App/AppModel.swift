@@ -23,6 +23,8 @@ enum Route: Equatable {
     case syncCheck
     /// Wink Beat: osu-like circles, sliders and spinners on a track, played by gaze and one-eye winks.
     case winkBeat
+    /// The blink arcades in 3D: «Кроты» and «Рыбалка».
+    case arcade(ArcadeGame)
 }
 
 enum ControlMode { case eyes, touch }
@@ -249,6 +251,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var rhythm: RhythmSession?
     /// Wink Beat's play in progress (`openWinkBeat`).
     @Published private(set) var winkBeat: WinkBeatSession?
+    /// A blink arcade open (`openArcade`).
+    @Published private(set) var arcade: ArcadeSession?
     /// The report of the rhythm play that just ended, for its results screen.
     @Published private(set) var rhythmSummary: SessionSummary?
     private var rhythmTimer: Timer?
@@ -306,6 +310,11 @@ final class AppModel: ObservableObject {
                 mode = .eyes
                 winkBeat = makeWinkBeat(byEye: true)
                 route = .winkBeat
+            } else if let g = ArcadeGame(rawValue: bot) {
+                // An arcade with its bot as the player, by finger: the level choice, level 3, the round, the results.
+                mode = .touch
+                arcade = makeArcade(g, byEye: false)
+                route = .arcade(g)
             } else if bot == "sync" {
                 // The sync check with a bot that taps 35 ms after each click.
                 route = .syncCheck
@@ -341,6 +350,7 @@ final class AppModel: ObservableObject {
         clinic.migrate(sessions)
         #endif
         WinkBeatProgress.profiles = profiles
+        ArcadeProgress.profiles = profiles
         account.onActiveChanged = { [weak self] in self?.playerChangedBySync() }
         bringKeptCalibrationToProfile()
         // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree. A player
@@ -463,6 +473,7 @@ final class AppModel: ObservableObject {
         switch route {
         case .game: return mode == .eyes
         case .winkBeat: return winkBeat?.byEye == true
+        case .arcade: return arcade?.byEye == true
         default: return false
         }
     }
@@ -779,6 +790,14 @@ final class AppModel: ObservableObject {
                               raw: rawAim, alt: altAim)
             }
         }
+        if case .arcade = route, let a = arcade {
+            a.sample(host: s.timestamp, aim: gazePoint, lids: s.features == nil ? nil : s.blink)
+            if let f = s.features, a.byEye {
+                logger.sample(kind: "arcade_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
+                              blink: s.blink, hold: blink.freezeGaze, processingMs: s.processingMs,
+                              correction: adapter == nil ? nil : aimCorrection, light: s.light, raw: rawAim, alt: altAim)
+            }
+        }
         if route == .winkTest, let f = s.features {
             logger.sample(kind: "wink_frame", time: s.timestamp, target: nil, gaze: gazePoint, f: f,
                           blink: s.blink, hold: false, processingMs: s.processingMs, light: s.light, raw: rawAim, alt: altAim)
@@ -974,6 +993,71 @@ final class AppModel: ObservableObject {
                               byEye: byEye, startedAt: started, durationSec: seconds, score: play.score,
                               accuracy: judged.isEmpty ? nil : play.accuracy,
                               hits: judged.filter { $0 != .miss }.count, misses: play.count(.miss), build: Self.build))
+    }
+
+    // MARK: The blink arcades
+
+    /// Opens an arcade's level choice: by eye where the phone tracks faces (after the session's calibration), else
+    /// (or with `byEye: false`) by finger.
+    func openArcade(_ game: ArcadeGame, byEye wanted: Bool = true) {
+        let byEye = wanted && eyeTrackingSupported
+        mode = byEye ? .eyes : .touch
+        if byEye, model == nil {
+            beginCalibration(then: .arcade(game))
+            return
+        }
+        arcade?.leave()
+        arcade = makeArcade(game, byEye: byEye)
+        route = .arcade(game)
+    }
+
+    /// Back to the menu from an arcade.
+    func leaveArcade() {
+        arcade?.leave()
+        arcade = nil
+        route = .menu
+    }
+
+    private func makeArcade(_ game: ArcadeGame, byEye: Bool) -> ArcadeSession {
+        let bot = autoplay == game.rawValue
+        var roundSec: Double?
+        #if DEBUG
+        // CI: `-SpantherArcadeSec 40` shortens the round.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-SpantherArcadeSec"), i + 1 < args.count { roundSec = Double(args[i + 1]) }
+        #endif
+        let floor = byEye && !bot ? zoneFloorPt : 0
+        let s: ArcadeSession = game == .moles
+            ? MoleSession(game: .moles, byEye: byEye, bot: bot, zoneFloorPt: floor, roundSec: roundSec)
+            : FishingSession(game: .fishing, byEye: byEye, bot: bot, zoneFloorPt: floor, roundSec: roundSec)
+        let teach = byEye && !bot
+        s.onLabel = { [weak self] target, host in
+            // A blink that bonked a mole or hooked a fish: the player looked at it, so the aim learns from it.
+            if teach { _ = self?.learnLabel(target: target, before: host, source: game.rawValue) }
+        }
+        s.onBegin = { [weak self] level, host in
+            self?.logger.arcade(kind: "arcade_start", time: host, game: game.rawValue, level: level)
+        }
+        s.onEvent = { [weak self] kind, host, spot, reaction, score in
+            self?.logger.arcade(kind: kind, time: host, game: game.rawValue, spot: spot, reaction: reaction, score: score)
+        }
+        s.onPerf = { [weak self] fps, gpuMs, shadowsOff, host in
+            self?.logger.arcadePerf(time: host, game: game.rawValue, fps: fps, gpuMs: gpuMs, shadowsOff: shadowsOff)
+        }
+        s.onEnd = { [weak self] o, start, end in
+            self?.logger.arcade(kind: "arcade_end", time: end, game: game.rawValue, level: o.level, score: o.score,
+                                accuracy: o.accuracy, stars: o.stars)
+            self?.keepArcade(o, byEye: byEye, seconds: end - start)
+        }
+        return s
+    }
+
+    /// A player's arcade round goes to the account; a clinic child's and the bot's do not.
+    private func keepArcade(_ o: ArcadeOutcome, byEye: Bool, seconds: Double) {
+        guard clinic.playingID == nil, autoplay == nil, let p = profiles.active else { return }
+        account.queue(PlayRow(profileID: p.id, game: o.game.rawValue, difficulty: "level-\(o.level)", byEye: byEye,
+                              startedAt: Date(timeIntervalSinceNow: -seconds), durationSec: seconds, score: o.score,
+                              accuracy: o.accuracy, hits: o.hits, misses: o.misses, build: Self.build))
     }
 
     // MARK: rhythm mode
@@ -1469,6 +1553,7 @@ final class AppModel: ObservableObject {
         switch afterCalibration {
         case .rhythm: openRhythm()
         case .winkBeat: openWinkBeat()
+        case .arcade(let g): openArcade(g)
         case .pursuit: openPursuit(byEye: true)
         case .probe: openProbe()
         case .game:

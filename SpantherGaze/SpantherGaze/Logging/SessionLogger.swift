@@ -39,6 +39,8 @@ final class SessionLogger {
         case model, checkHead = "check_head_pt", checkScreen = "check_screen_pt"
         // `pursuit_end` rows: the frames on which the warm-up's dot taught the aim (the eyes were following it).
         case taught
+        // The blink arcades: which one (moles, fishing), and the 3D stage's frame rate and GPU time per frame.
+        case game, fps, gpuMs = "gpu_ms"
     }
 
     /// One CSV line. Cells that are not set stay empty. Built one cell at a time: long array literals of
@@ -305,6 +307,34 @@ final class SessionLogger {
         r[.distraction] = kind
         r.set(.targetX, p?.x)
         r.set(.targetY, p?.y)
+        write(r.line)
+    }
+
+    /// The blink arcades. `arcade_start` (time = the round's start) and `arcade_end` (score, accuracy 0...1, stars
+    /// in the level column's neighbour `judgement`): the game and the level. Event rows (`mole_hit`, `mole_whiff`,
+    /// `fish_bite_perch`, `fish_hooked`, …, time = the blink's onset or the rules' moment): the spot (screen pt),
+    /// the time from the target's start to the blink (s) and the score after it. `arcade_perf` every 2 s of play:
+    /// the stage's frames per second, its GPU time per frame (ms) and whether heat turned the shadows off (`hold`).
+    func arcade(kind: String, time: Double, game: String, level: Int? = nil, spot: Vec2? = nil, reaction: Double? = nil,
+                score: Int? = nil, accuracy: Double? = nil, stars: Int? = nil) {
+        var r = Row(kind: kind, time: time)
+        r[.game] = game
+        r.set(.level, level)
+        r.set(.targetX, spot?.x)
+        r.set(.targetY, spot?.y)
+        r.set(.reaction, reaction)
+        r.set(.score, score)
+        r.set(.accuracy, accuracy)
+        if let stars { r[.judgement] = "\(stars)" }
+        write(r.line)
+    }
+
+    func arcadePerf(time: Double, game: String, fps: Double, gpuMs: Double, shadowsOff: Bool) {
+        var r = Row(kind: "arcade_perf", time: time)
+        r[.game] = game
+        r.set(.fps, fps)
+        r.set(.gpuMs, gpuMs)
+        r[.hold] = shadowsOff ? "1" : "0"
         write(r.line)
     }
 
