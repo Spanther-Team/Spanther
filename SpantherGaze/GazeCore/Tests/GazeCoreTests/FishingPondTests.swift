@@ -66,6 +66,36 @@ final class FishingPondTests: XCTestCase {
         XCTAssertEqual(p.result(at: t).followShare ?? 0, 1, accuracy: 0.02)
     }
 
+    /// A blink in the bite window hooks the biting fish when the aim has slipped off it, up to the assist reach.
+    func testAssistReachHooksTheBitingFish() {
+        func setUp() -> (FishingPond, Int, Double, Vec2, Double) {
+            var p = FishingPond(level: 1, screen: screen, startTime: 0, seed: 3)
+            let id = p.fish[0].id
+            var t = 0.0
+            _ = biteTime(watch(&p, id, from: &t, until: FishSpecies.of(p.fish[0].kind).holdSec + 0.1))
+            let f = p.fish.first { $0.id == id }!
+            let toCentre = Vec2(screen.x / 2, screen.y / 2) - f.position
+            let dir = toCentre.length > 1 ? toCentre * (1 / toCentre.length) : Vec2(1, 0)
+            return (p, id, t, dir, p.reach(f))
+        }
+        let (p0, id, t, dir, reach) = setUp()
+        var p = p0
+        let f = p.fish.first { $0.id == id }!
+        let aim = f.position + dir * (2 * reach)
+        _ = p.update(time: t, aim: aim)
+        guard case .hooked(let hooked, _)? = p.blink(onset: t, aim: aim) else { return XCTFail("the assist should hook it") }
+        XCTAssertEqual(hooked.id, id)
+        XCTAssertTrue(p.lastAssisted)
+
+        let (q0, qid, qt, qdir, qreach) = setUp()
+        var q = q0
+        let g = q.fish.first { $0.id == qid }!
+        let far = g.position + qdir * (2.6 * qreach)
+        _ = q.update(time: qt, aim: far)
+        XCTAssertNil(q.blink(onset: qt, aim: far))
+        XCTAssertFalse(q.lastAssisted)
+    }
+
     func testMissedWindowLetsGo() {
         var p = FishingPond(level: 1, screen: screen, startTime: 0, seed: 4)
         let id = p.fish[0].id

@@ -32,6 +32,67 @@ final class AdaptTests: XCTestCase {
         XCTAssertLessThan(abs(left), offset * 0.35, "\(offset) pt without, \(left) pt left with the adapter")
     }
 
+    func testSolveFourByFour() {
+        // x = (1, 2, 3, 4)
+        let a: [Double] = [4, 1, 0, 0, 1, 3, 1, 0, 0, 1, 2, 1, 0, 0, 1, 5]
+        let b: [Double] = [6, 10, 12, 23]
+        let x = GazeAdapter.solve(a, b)
+        for (i, v) in [1.0, 2, 3, 4].enumerated() { XCTAssertEqual(x?[i] ?? 0, v, accuracy: 1e-9) }
+    }
+
+    /// An aim that swings 1.2 times wider across than at the calibration, as the head-frame model did on the moles
+    /// of 2026-11-28: the side terms learn it from labels on both sides and correct each side its own way, where a
+    /// plain bias cannot (the two sides cancel out).
+    func testSideTermsCorrectAWiderSwing() {
+        let center = Vec2(422, 195)
+        var config = GazeAdapterConfig()
+        config.followPitch = 0
+        config.followYaw = 0
+        var sided = GazeAdapter(reference: level, distanceM: 0.25, config: config, center: center)
+        var plain = GazeAdapter(reference: level, distanceM: 0.25, config: config)
+        func raw(_ g: Vec2) -> Vec2 { Vec2(center.x + 1.2 * (g.x - center.x), g.y) }
+        let targets = [Vec2(211, 156), Vec2(633, 296), Vec2(211, 296), Vec2(633, 156), Vec2(422, 156)]
+        var t = 0.0
+        for _ in 0..<4 {
+            for g in targets {
+                sided.learn(raw: raw(g), target: g, pose: level, time: t)
+                plain.learn(raw: raw(g), target: g, pose: level, time: t)
+                t += 2
+            }
+        }
+        for g in [Vec2(211, 220), Vec2(633, 220), Vec2(300, 100)] {
+            XCTAssertLessThan(sided.correct(raw(g), pose: level).distance(to: g), 0.3 * raw(g).distance(to: g) + 1)
+        }
+        XCTAssertGreaterThan(plain.correct(raw(Vec2(211, 220)), pose: level).distance(to: Vec2(211, 220)), 30)
+        XCTAssertLessThan(sided.correct(raw(Vec2(211, 220)), pose: level).distance(to: Vec2(211, 220)), 12)
+        // Without labels, or without a centre, the side terms add nothing.
+        let fresh = GazeAdapter(reference: level, distanceM: 0.25, config: config, center: center)
+        XCTAssertEqual(fresh.correction(raw: Vec2(100, 50), pose: level), .zero)
+        XCTAssertEqual(plain.wx.count, 3)
+        XCTAssertEqual(sided.wx.count, 4)
+    }
+
+    /// Labels on one side only: the side terms are held back by their prior, so the other side is not thrown off
+    /// further than a plain bias would throw it.
+    func testOneSidedLabelsDoNotSwingTheOtherSide() {
+        let center = Vec2(422, 195)
+        var config = GazeAdapterConfig()
+        config.followPitch = 0
+        config.followYaw = 0
+        var sided = GazeAdapter(reference: level, distanceM: 0.25, config: config, center: center)
+        var plain = GazeAdapter(reference: level, distanceM: 0.25, config: config)
+        var t = 0.0
+        for _ in 0..<10 {
+            // The right side reads 40 pt too far right; the left side is right.
+            sided.learn(raw: Vec2(673, 200), target: Vec2(633, 200), pose: level, time: t)
+            plain.learn(raw: Vec2(673, 200), target: Vec2(633, 200), pose: level, time: t)
+            t += 1
+        }
+        let left = Vec2(211, 200)
+        XCTAssertLessThanOrEqual(sided.correct(left, pose: level).distance(to: left),
+                                 plain.correct(left, pose: level).distance(to: left) + 1)
+    }
+
     func testSolve3() {
         let x = GazeAdapter.solve3([2, 1, 0, 1, 3, 1, 0, 1, 4], [3, 5, 5])
         XCTAssertEqual(x?[0] ?? 0, 1, accuracy: 1e-9)

@@ -4,10 +4,10 @@ import Foundation
 /// publishable). Both are meant to ship inside the app; the rows of other accounts are closed by the database.
 /// Never put the service_role key or the database password here.
 ///
-/// Empty until the project exists: the app then shows no sign-in at all and works on the phone alone.
+/// With either empty the app shows no sign-in at all and works on the phone alone.
 enum BackendSettings {
-    static let projectURL = ""
-    static let publicKey = ""
+    static let projectURL = "https://hmwcfvfnngexdfzwzmtq.supabase.co"
+    static let publicKey = "sb_publishable_BNRKlJELEKrkKMst2ykfFw_1D41N5R4"
 
     static var config: BackendConfig? {
         if let c = BackendConfig(projectURL: projectURL, apiKey: publicKey) { return c }

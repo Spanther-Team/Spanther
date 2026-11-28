@@ -58,6 +58,12 @@ public struct MoleConfig: Equatable, Sendable {
     public var holeRadius = 0.11
     /// Reach of a hole for the eye (its lock zone) as a share of its drawn radius, before the zone floor.
     public var reachScale = 1.3
+    /// A blink that finds no mole in reach still bonks the nearest mole up within this many reaches of the aim
+    /// (never a hedgehog): the game asks which creature the player looks at, not whether the aim fell inside a
+    /// circle, the way gaze interaction picks objects (Tobii's G2OM). In Aziz's session of 2026-11-28 the aim sat
+    /// 70 to 135 pt left of the left-hand holes (reach 56 pt) at his blinks; 2.3 reaches (128 pt) take most of those
+    /// and stay under the 140 pt between two holes one above the other.
+    public var assistScale = 2.3
     public var molePoints = 100
     public var goldenPoints = 300
     /// Taken away for bonking a hedgehog (the score never goes under 0).
@@ -271,14 +277,23 @@ public struct MoleGarden: Sendable {
     /// A blink or wink that began at `onset`, with the aim from just before it (pt; nil: the lock decides).
     public mutating func bonk(onset: Double, aim: Vec2?) -> MoleEvent? {
         guard !ended, onset >= startTime else { return nil }
+        lastAssisted = false
         let hole = aim.flatMap(nearestHole(to:)) ?? lockedHole
-        guard let hole else {
-            tally.whiffs += 1
-            combo = 0
-            return .whiff(hole: nil)
+        func bonkable(_ p: MolePop) -> Bool {
+            p.bonkedAt == nil && onset >= p.start && onset <= p.hideAt + config.lateGraceSec
         }
-        guard let i = pops.lastIndex(where: { $0.hole == hole && $0.bonkedAt == nil
-                                               && onset >= $0.start && onset <= $0.hideAt + config.lateGraceSec }) else {
+        var found = hole.flatMap { h in pops.lastIndex { $0.hole == h && bonkable($0) } }
+        if found == nil, let a = aim {
+            // The nearest mole up within the assist reach, if the aim missed every one.
+            var best: (Int, Double)?
+            for (j, p) in pops.enumerated() where p.kind != .hedgehog && bonkable(p) {
+                let d = a.distance(to: holeCenter(p.hole))
+                if d <= reach * config.assistScale, d < (best?.1 ?? .infinity) { best = (j, d) }
+            }
+            found = best?.0
+            lastAssisted = found != nil
+        }
+        guard let i = found else {
             tally.whiffs += 1
             combo = 0
             return .whiff(hole: hole)
@@ -302,6 +317,9 @@ public struct MoleGarden: Sendable {
         reactionSum += reaction
         return .hit(p, points: points, reactionSec: reaction)
     }
+
+    /// Whether the last bonk found its mole through the assist reach (`MoleConfig.assistScale`).
+    public private(set) var lastAssisted = false
 
     /// The nearest hole whose reach holds `aim`.
     public func nearestHole(to aim: Vec2) -> Int? {

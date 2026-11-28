@@ -63,6 +63,11 @@ public struct FishingConfig: Equatable, Sendable {
     public var shore = Vec2(0.5, 0.97)
     /// A fish's reach for the eye as a share of its drawn radius, before the zone floor; a hooked fish gets more.
     public var reachScale = 1.5
+    /// A blink during a bite hooks the biting fish when the aim is within this many of its reaches, even if the
+    /// lock has slipped off it: the fish bit because the player looked at it (as `MoleConfig.assistScale`). In
+    /// Aziz's session of 2026-11-28 six of eight lost bites had a blink in time, with the aim 45 to 100 pt off the
+    /// still fish.
+    public var assistScale = 2.3
     public var hookedReachScale = 2.0
     /// Curiosity drains this much per second while the eyes are elsewhere (a full fish takes 1/this s to forget).
     public var forgetPerSec = 0.6
@@ -78,6 +83,7 @@ public struct FishingConfig: Equatable, Sendable {
 
     public static func == (a: FishingConfig, b: FishingConfig) -> Bool {
         a.roundSec == b.roundSec && a.pond == b.pond && a.shore == b.shore && a.reachScale == b.reachScale
+            && a.assistScale == b.assistScale
             && a.hookedReachScale == b.hookedReachScale && a.forgetPerSec == b.forgetPerSec && a.fleeSec == b.fleeSec
             && a.respawnSec == b.respawnSec && a.reelSwing == b.reelSwing && a.levels == b.levels
     }
@@ -284,16 +290,29 @@ public struct FishingPond: Sendable {
     /// A blink or wink that began at `onset`. Hooks a biting fish under the eyes; anything else does nothing.
     public mutating func blink(onset: Double, aim: Vec2?) -> FishingEvent? {
         guard !ended else { return nil }
-        guard let i = fish.firstIndex(where: { f in
-            guard case .biting(let since, let until) = f.state, onset >= since - 0.05, onset <= until else { return false }
-            return f.id == lockedFish || (aim.map { $0.distance(to: f.position) <= reach(f) } ?? false)
-        }) else { return nil }
+        func biting(_ f: Fish) -> Bool {
+            guard case .biting(let since, let until) = f.state else { return false }
+            return onset >= since - 0.05 && onset <= until
+        }
+        lastAssisted = false
+        var found = fish.firstIndex { f in
+            biting(f) && (f.id == lockedFish || (aim.map { $0.distance(to: f.position) <= reach(f) } ?? false))
+        }
+        if found == nil, let a = aim {
+            found = fish.indices.filter { biting(fish[$0]) && a.distance(to: fish[$0].position) <= reach(fish[$0]) * config.assistScale }
+                .min { a.distance(to: fish[$0].position) < a.distance(to: fish[$1].position) }
+            lastAssisted = found != nil
+        }
+        guard let i = found else { return nil }
         guard case .biting(let since, _) = fish[i].state else { return nil }
         fish[i].state = .hooked(since: onset, from: fish[i].position, progress: 0, offSince: nil)
         let reaction = max(0, onset - since)
         hookSum += reaction
         return .hooked(fish[i], reactionSec: reaction)
     }
+
+    /// Whether the last hook found its fish through the assist reach (`FishingConfig.assistScale`).
+    public private(set) var lastAssisted = false
 
     public func result(at time: Double) -> FishingResult {
         var r = tally

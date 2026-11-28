@@ -403,8 +403,9 @@ if let reference = HeadPose.mean(poseRows) {
         let calibrationDistance = poseRows.map(\.distance).reduce(0, +) / Double(poseRows.count)
         typealias Sums = [String: (Double, Double, Double)]
         // [source or pitch bin: (weight, error without, error with)]
-        func replay(_ config: GazeAdapterConfig) -> (bySource: Sums, byPitch: Sums, adapter: GazeAdapter) {
-            var adapter = GazeAdapter(reference: reference, distanceM: calibrationDistance, config: config)
+        func replay(_ config: GazeAdapterConfig, sides: Bool = false) -> (bySource: Sums, byPitch: Sums, adapter: GazeAdapter) {
+            var adapter = GazeAdapter(reference: reference, distanceM: calibrationDistance, config: config,
+                                      center: sides ? Vec2(screen.x / 2, screen.y / 2) : nil)
             var bySource: Sums = [:], byPitch: Sums = [:]
             for l in labels.sorted(by: { $0.time < $1.time }) {
                 let without = l.raw.distance(to: l.target), with = adapter.correct(l.raw, pose: l.pose).distance(to: l.target)
@@ -426,6 +427,17 @@ if let reference = HeadPose.mean(poseRows) {
                   + String(format: " %6.1f labels  %5.2f -> %5.2f cm", s.0, s.1 / s.0 / 60, s.2 / s.0 / 60))
         }
         print("Learned \(base.adapter.learned), left out \(base.adapter.rejected) as too far from the aim.")
+        // The side terms (GazeAdapterConfig.priorGain) as the app plays the head-frame model: no follow of the head.
+        var headConfig = GazeAdapterConfig()
+        headConfig.followPitch = 0
+        headConfig.followYaw = 0
+        let plain = replay(headConfig), sided = replay(headConfig, sides: true)
+        print("As the head-frame model plays (no head follow): with the adapter, side terms off -> on (cm).")
+        for (name, a) in plain.bySource.sorted(by: { $0.key < $1.key }) {
+            guard let b = sided.bySource[name] else { continue }
+            print(name.padding(toLength: 18, withPad: " ", startingAt: 0)
+                  + String(format: " %6.1f labels  %5.2f -> %5.2f cm", a.0, a.2 / a.0 / 60, b.2 / b.0 / 60))
+        }
         // How the starting tilt terms (GazeAdapterConfig.followPitch / followYaw) change the result on this session:
         // the error with the adapter on every label but the check dots, which only warm it up.
         print("Tilt follow sweep, error with the adapter on the game's labels (cm); rows pitch, columns yaw:")
