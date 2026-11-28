@@ -1,0 +1,79 @@
+PASS start screen: app running
+PASS start screen ask ru: app running
+PASS start screen denied ru: app running
+PASS start screen denied kk: app running
+PASS start screen ask en: app running
+PASS start screen restricted kk: app running
+PASS start screen allowed en: app running
+PASS menu: app running
+PASS account signIn: app running
+PASS account code: app running
+PASS eyes: app running after 60 s
+PASS eyes: 36 meteors logged
+PASS eyes: 36 kills spent energy
+PASS eyes: pool ran dry and was reloaded 4 times
+PASS eyes: level 1 ended
+PASS eyes: energy accounting matches balance.json
+PASS eyes: 14 red signs, 5 looked at, 9 passed by, target scale 0.70, signs on 1
+PASS eyes: app running on the summary
+PASS eyes: 1 meteor play kept: 36 of 36 burned, hold 0.94, red signs looked at 5 of 14, target scale 0.7
+PASS music: ambient playing, 48000 Hz, 6225408 frames, peak 0.338
+PASS touch: app running after 60 s
+PASS touch: 36 meteors logged
+PASS touch: 36 kills spent energy
+PASS touch: pool ran dry and was reloaded 5 times
+PASS touch: level 1 ended
+PASS touch: energy accounting matches balance.json
+PASS touch: 14 red signs, 5 looked at, 9 passed by, target scale 0.70, signs on 1
+PASS wink: app running after the test
+PASS wink: 1 run, 60 cues, 67 closures, 6118 frames, hits left 27/30 right 24/30, wrong eye 3, both eyes 3
+PASS rhythm: app running after the track
+PASS rhythm: 1 start, 1 end, 95 notes, 81 played, 14 missed, 95 judged, 81 of 81 winks on the locked note, accuracy 0.85, learned delay 119 ms, score 9791
+PASS rhythm: the play screen changes between screenshots
+PASS warm-up: app running after the minute
+PASS warm-up: the screen changes between screenshots
+PASS warm-up: started and ended once in the CSV
+PASS history: 3 plays kept, 1 rhythm, the last with 81 of 95 notes played, accuracy 0.85, timing deviation 37 ms, gaze held 1.00, winks left 0.93 right 0.93
+PASS warm-up: 1 warm-up kept: gaze near the dot 0.89 (horizontal 0.83, vertical 1.00, eight 0.84), no gaze 0.055, mean distance 0.76 cm
+PASS probe: app running after the probe
+PASS probe: 1 child, 1 course, 1 session: number 1, completed True, hold 1.00, first look 309 ms, pursuit 1.00, csv session-2026-11-28_11-32-58.csv
+PASS sync check: app running
+PASS sync check: SYNC_RESULT 35 steady(offset: 0.03441909391969622)
+PASS wink beat: app running
+PASS wink beat: WINKBEAT_RESULT 97.7 S 80010 maxCombo=95 misses=0 blinks=22
+PASS moles: app running
+PASS moles: ARCADE_RESULT moles 3 1840 1.00
+PASS fishing: app running
+PASS fishing: ARCADE_RESULT fishing 3 2650 1.00
+PASS report summary: app running
+PASS report history: app running
+PASS report settings: app running
+PASS menu in en: app running
+PASS report summary in en: app running
+PASS report history in en: app running
+PASS report settings in en: app running
+PASS rhythm in en: app running
+PASS eyes in en: app running
+PASS pursuit in en: app running
+PASS sync in en: app running
+PASS winkbeat in en: app running
+PASS moles in en: app running
+PASS fishing in en: app running
+PASS menu in kk: app running
+PASS report summary in kk: app running
+PASS report history in kk: app running
+PASS report settings in kk: app running
+PASS rhythm in kk: app running
+PASS eyes in kk: app running
+PASS pursuit in kk: app running
+PASS sync in kk: app running
+PASS winkbeat in kk: app running
+PASS moles in kk: app running
+PASS fishing in kk: app running
+PASS start screen on iPhone SE: app running
+PASS menu on iPhone SE: app running
+PASS rhythm track list on iPhone SE: app running
+PASS report history on iPhone SE: app running
+PASS report summary on iPhone SE: app running
+PASS report settings on iPhone SE: app running
+PASS Kazakh history on iPhone SE: app running

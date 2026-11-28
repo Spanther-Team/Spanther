@@ -1,0 +1,1 @@
+WINKBEAT_RESULT 97.7 S 80010 maxCombo=95 misses=0 blinks=22
