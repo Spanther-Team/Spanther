@@ -78,6 +78,8 @@ final class WinkBeatSession: ObservableObject {
 
     @Published private(set) var phase: Phase = .select
     @Published var difficulty: WinkBeatDifficulty = .normal
+    /// The 30-day plan sent the player here with its difficulty: the start disc shows at once, with no choice.
+    var planned = false
     @Published private(set) var hud = WinkBeatHud()
     @Published private(set) var stamps: [WinkBeatStamp] = []
     /// Circles and slider heads waiting for a wink: their eye marks are drawn over the stage.

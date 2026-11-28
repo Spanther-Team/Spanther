@@ -73,6 +73,8 @@ struct ArcadeOutcome: Equatable {
     /// The results' detail lines.
     var lines: [String]
     var nextOpen: Bool
+    /// Moles: mean time from a mole's start to the blink (s); fishing: mean look until the catch (s).
+    var reactionSec: Double? = nil
 }
 
 /// One arcade play, shared by both games: the level choice, a 3-2-1, the round on a 60 Hz timer, the eyes through
@@ -88,6 +90,8 @@ class ArcadeSession: ObservableObject, ToonSource {
     let zoneFloorPt: Double
     /// CI: a shorter round (s).
     let roundSec: Double?
+    /// The 30-day plan sent the player here at this level: the round starts at once, with no level choice.
+    var planLevel: Int?
 
     @Published private(set) var phase: Phase = .levels
     @Published private(set) var level = 1
@@ -203,12 +207,16 @@ class ArcadeSession: ObservableObject, ToonSource {
         guard phase == .levels || phase == .done, s.x > 100, s.y > 100 else { return }
         if abs(s.x - screen.x) < 0.5, abs(s.y - screen.y) < 0.5, toonScene != nil { return }
         screen = s
+        if phase == .levels, let n = planLevel {
+            choose(level: n)
+            return
+        }
         makeRound(level: level, seed: seedBase)
         startTimer()
     }
 
     func choose(level n: Int) {
-        guard ArcadeProgress.open(game, level: n, stars: stars) || bot else { return }
+        guard ArcadeProgress.open(game, level: n, stars: stars) || bot || planLevel != nil else { return }
         level = n
         seedBase &+= 1
         makeRound(level: n, seed: seedBase)
@@ -404,7 +412,8 @@ final class MoleSession: ArcadeSession {
         if r.rabbitsLeft > 0, r.rabbitHits == 0 { lines.append(L("Кролика не тронули ни разу!")) }
         if let m = r.meanReactionSec { lines.append(L("Среднее время до моргания: {0} с", String(format: "%.2f", m))) }
         return ArcadeOutcome(game: .moles, level: r.level, stars: r.stars, score: r.score, accuracy: r.accuracy,
-                             hits: r.hits, misses: r.escaped + r.whiffs, lines: lines, nextOpen: false)
+                             hits: r.hits, misses: r.escaped + r.whiffs, lines: lines, nextOpen: false,
+                             reactionSec: r.meanReactionSec)
     }
 
     override func act(t: Double, host: Double, aim: Vec2?) {
@@ -551,7 +560,8 @@ final class FishingSession: ArcadeSession {
         if let m = r.meanHoldSec { lines.append(L("Среднее время взгляда на рыбу: {0} с", String(format: "%.1f", m))) }
         lines.append(L("Время: {0}", ArcadeView.clock(Int(r.durationSec.rounded()))))
         return ArcadeOutcome(game: .fishing, level: r.level, stars: r.stars, score: r.score, accuracy: r.accuracy,
-                             hits: r.landed, misses: max(0, r.goal - r.landed), lines: lines, nextOpen: false)
+                             hits: r.landed, misses: max(0, r.goal - r.landed), lines: lines, nextOpen: false,
+                             reactionSec: r.meanHoldSec)
     }
 
     /// Blinks do nothing here: the hold catches.

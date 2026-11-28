@@ -151,9 +151,10 @@ public final class GameModel {
     private var decoyTimer = 0.0
 
     /// `targetScale`: 1 for the BALANCE.md sizes, `config.smallTargetScale` for small targets, with `zoneFloorPt`
-    /// from `config.zoneFloor`. `decoys`: the play has red signs (if balance.json describes them).
+    /// from `config.zoneFloor`. `decoys`: the play has red signs (if balance.json describes them). `startLevel`: the
+    /// level play starts on (the 30-day plan's).
     public init(config: BalanceConfig, screen: Vec2, marginPt: Double, targetScale: Double = 1, zoneFloorPt: Double = 0,
-                decoys: Bool = false, seed: UInt64 = UInt64(Date().timeIntervalSince1970)) {
+                decoys: Bool = false, startLevel: Int = 1, seed: UInt64 = UInt64(Date().timeIntervalSince1970)) {
         self.config = config
         self.screen = screen
         self.marginPt = marginPt
@@ -170,7 +171,8 @@ public final class GameModel {
         let h = screen.y * 0.15
         earthRadius = (screen.x * screen.x / 4 + h * h) / (2 * h)
         earthCenter = Vec2(screen.x / 2, screen.y - h + earthRadius)
-        d = config.difficulty(level: 1)
+        level = min(config.levelCount, max(1, startLevel))
+        d = config.difficulty(level: level)
         energy = config.energy?.max ?? 0
     }
 
