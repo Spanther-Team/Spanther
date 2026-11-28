@@ -36,7 +36,7 @@ final class ArcadeStageTests: XCTestCase {
             stage.draw(g, at: t, swings: swings, into: &draws)
             most = max(most, draws.count)
             for p in g.pops where p.state(at: t, config: g.config) == .up {
-                let mesh = p.kind == .hedgehog ? MoleStage.Mesh.hedgehog : p.kind == .golden ? .golden : .mole
+                let mesh = MoleStage.mesh(p.kind)
                 let c = stage.holeCentres[p.hole]
                 guard let d = draws.first(where: {
                     $0.mesh == mesh.rawValue && abs(translation($0).x - c.x) < 1e-3 && abs(translation($0).z - c.z) < 1e-3
@@ -87,9 +87,9 @@ final class ArcadeStageTests: XCTestCase {
             var p = FishingPond(level: 5, screen: screen, startTime: 0, seed: 3)
             let stage = PondStage(pond: p)
             var draws: [ToonDraw] = [], over: [ToonDraw] = []
-            var t = 0.0, sawBite = false
+            var t = 0.0, sawRing = false
             let id = p.fish[0].id
-            while t < 4 {
+            while t < 0.8 {
                 _ = p.update(time: t, aim: p.fish.first { $0.id == id }?.position)
                 draws.removeAll(keepingCapacity: true)
                 stage.draw(p, at: t, moments: [], into: &draws, over: &over)
@@ -106,18 +106,19 @@ final class ArcadeStageTests: XCTestCase {
                         XCTAssertLessThan(i ?? .max, water)
                     }
                 }
-                if case .biting? = p.fish.first(where: { $0.id == id })?.state {
-                    XCTAssertTrue(draws.contains { $0.mesh == PondStage.Mesh.bobber.rawValue })
-                    XCTAssertTrue(draws.contains { $0.mesh == PondStage.Mesh.line.rawValue })
-                    sawBite = true
+                if p.lockedFish == id {
+                    XCTAssertTrue(over.contains { $0.mesh == PondStage.Mesh.ring.rawValue }, "the held fish has its ring")
+                    sawRing = true
                 }
                 t += 1.0 / 30
             }
-            XCTAssertTrue(sawBite)
-            let landed = PondMoment(kind: .landed(.perch), spot: p.fish[0].position, time: t)
+            XCTAssertTrue(sawRing)
+            let caught = PondMoment(kind: .caught(.perch), spot: p.fish[0].position, time: t)
             draws.removeAll()
-            stage.draw(p, at: t + 0.3, moments: [landed], into: &draws, over: &over)
-            XCTAssertTrue(draws.contains { $0.mesh == PondStage.Mesh.perch.rawValue && translation($0).y > 0 }, "the catch leaps")
+            stage.draw(p, at: t + 0.2, moments: [caught], into: &draws, over: &over)
+            XCTAssertFalse(draws.contains { $0.mesh == PondStage.Mesh.perch.rawValue && translation($0).y > 0 },
+                           "no leap: the catch goes straight into the catch")
+            XCTAssertTrue(over.contains { $0.mesh == PondStage.Mesh.droplet.rawValue }, "a splash where it was")
         }
     }
 }

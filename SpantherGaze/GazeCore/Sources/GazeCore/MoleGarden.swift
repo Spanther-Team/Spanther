@@ -3,7 +3,9 @@ import Foundation
 // «Кроты»: moles pop out of six holes in a garden bed; the player looks at a hole and blinks (or winks) to bonk the
 // mole in it. This is the rules core only; the 3D garden draws its state. The holes sit at fixed spots on the screen,
 // so a hit is decided in screen points like every other eye target, and the drawing places its camera to match them.
-// A hedgehog sometimes comes out instead of a mole: it must be left alone.
+// A hedgehog sometimes comes out instead of a mole, and a rabbit hops from hole to hole from the first level on: both
+// must be left alone. The rabbit is extra to the moles (Aziz, 2026-11-28: something that gets in the way and pulls the
+// eyes, "потому что приедается игра и очень быстро"), so it never takes a mole's turn.
 
 /// One level's pace. Level 1 is calm enough for a first play, level 10 is quick with three moles up at once.
 public struct MoleLevel: Equatable, Sendable {
@@ -17,13 +19,20 @@ public struct MoleLevel: Equatable, Sendable {
     public var decoyShare: Double
     /// Share of pops that are a golden mole (worth more).
     public var goldenShare: Double
+    /// Time from one rabbit to the next (s), varied by ±25%; nil: no rabbits.
+    public var rabbitGapSec: Double?
+    /// Hops a rabbit makes to another hole before it leaves, at most.
+    public var rabbitHops: Int
 
-    public init(upSec: Double, gapSec: Double, maxUp: Int, decoyShare: Double, goldenShare: Double) {
+    public init(upSec: Double, gapSec: Double, maxUp: Int, decoyShare: Double, goldenShare: Double,
+                rabbitGapSec: Double? = nil, rabbitHops: Int = 0) {
         self.upSec = upSec
         self.gapSec = gapSec
         self.maxUp = maxUp
         self.decoyShare = decoyShare
         self.goldenShare = goldenShare
+        self.rabbitGapSec = rabbitGapSec
+        self.rabbitHops = rabbitHops
     }
 
     /// Level `n` of `count`, on the S-curve the meteors use (BALANCE.md): calm early levels, steep middle.
@@ -35,7 +44,9 @@ public struct MoleLevel: Equatable, Sendable {
                          gapSec: lerp(1.5, 0.55),
                          maxUp: n >= 8 ? 3 : n >= 4 ? 2 : 1,
                          decoyShare: n >= 7 ? 0.22 : n >= 3 ? 0.14 : 0,
-                         goldenShare: 0.08)
+                         goldenShare: 0.08,
+                         rabbitGapSec: lerp(7, 3.5),
+                         rabbitHops: n >= 6 ? 3 : n >= 2 ? 2 : 1)
     }
 }
 
@@ -66,8 +77,13 @@ public struct MoleConfig: Equatable, Sendable {
     public var assistScale = 2.3
     public var molePoints = 100
     public var goldenPoints = 300
-    /// Taken away for bonking a hedgehog (the score never goes under 0).
+    /// Taken away for bonking a hedgehog or the rabbit (the score never goes under 0).
     public var decoyPenalty = 150
+    /// The first rabbit comes this long after the start (s).
+    public var firstRabbitSec = 4.0
+    /// A rabbit sits up this many times as long as a mole of the level, at least `rabbitMinUpSec`.
+    public var rabbitUpScale = 1.3
+    public var rabbitMinUpSec = 1.1
     /// Extra points per mole in a row, and the cap of that extra.
     public var comboStep = 10
     public var comboCap = 100
@@ -77,7 +93,10 @@ public struct MoleConfig: Equatable, Sendable {
 }
 
 public enum MoleKind: String, Sendable, Equatable {
-    case mole, golden, hedgehog
+    case mole, golden, hedgehog, rabbit
+
+    /// Must be left alone.
+    public var isDecoy: Bool { self == .hedgehog || self == .rabbit }
 }
 
 /// One pop: a mole (or hedgehog) that comes out of `hole`.
@@ -92,6 +111,8 @@ public struct MolePop: Equatable, Sendable {
     public var hideAt: Double
     /// When it was bonked (the blink's onset), nil if not.
     public var bonkedAt: Double?
+    /// A rabbit's hops still to come.
+    public var hopsLeft = 0
 
     /// How far out of the hole it is at `time`: 0 inside, 1 fully up. Drawing uses this.
     public func rise(at time: Double, config: MoleConfig) -> Double {
@@ -120,11 +141,13 @@ public enum MoleEvent: Equatable, Sendable {
     case popped(MolePop)
     /// A mole bonked: the points it gave and the time from its start to the blink (s).
     case hit(MolePop, points: Int, reactionSec: Double)
-    case hedgehogHit(MolePop)
+    /// A hedgehog or the rabbit bonked.
+    case decoyHit(MolePop)
     /// A blink on an empty hole, or away from every hole (nil).
     case whiff(hole: Int?)
     case escaped(MolePop)
-    case hedgehogLeft(MolePop)
+    /// A hedgehog or the rabbit went down untouched (a rabbit may come up again in another hole).
+    case decoyLeft(MolePop)
     case ended(MoleResult)
 }
 
@@ -137,6 +160,8 @@ public struct MoleResult: Equatable, Sendable, Codable {
     public var whiffs: Int
     public var hedgehogHits: Int
     public var hedgehogsLeft: Int
+    public var rabbitHits = 0
+    public var rabbitsLeft = 0
     public var bestCombo: Int
     /// Mean time from a mole's start to the blink that bonked it (s), nil without hits.
     public var meanReactionSec: Double?
@@ -175,6 +200,7 @@ public struct MoleGarden: Sendable {
     private var lock = GazeLock()
     private var random: SeededRandom
     private var nextPop: Double
+    private var nextRabbit: Double?
     private var nextID = 0
     private var lastHole: Int?
     private var tally = MoleResult(level: 0, score: 0, hits: 0, golden: 0, escaped: 0, whiffs: 0, hedgehogHits: 0,
@@ -191,6 +217,7 @@ public struct MoleGarden: Sendable {
         self.zoneFloor = zoneFloor
         random = SeededRandom(seed: seed)
         nextPop = startTime + config.firstPopSec
+        nextRabbit = pace.rabbitGapSec == nil ? nil : startTime + config.firstRabbitSec
         tally.level = self.level
     }
 
@@ -223,12 +250,17 @@ public struct MoleGarden: Sendable {
 
         // Pops that went back down.
         var kept: [MolePop] = []
+        var hops: [MolePop] = []
         for p in pops {
             if p.state(at: time, config: config) == .gone {
                 if p.bonkedAt == nil {
-                    if p.kind == .hedgehog {
+                    if p.kind == .rabbit {
+                        tally.rabbitsLeft += 1
+                        events.append(.decoyLeft(p))
+                        if p.hopsLeft > 0 { hops.append(p) }
+                    } else if p.kind == .hedgehog {
                         tally.hedgehogsLeft += 1
-                        events.append(.hedgehogLeft(p))
+                        events.append(.decoyLeft(p))
                     } else {
                         tally.escaped += 1
                         combo = 0
@@ -244,16 +276,29 @@ public struct MoleGarden: Sendable {
         let end = startTime + config.roundSec
         if time >= end {
             ended = true
-            for p in pops where p.bonkedAt == nil && p.kind != .hedgehog { tally.escaped += 1; events.append(.escaped(p)) }
+            for p in pops where p.bonkedAt == nil && !p.kind.isDecoy { tally.escaped += 1; events.append(.escaped(p)) }
             pops = []
             events.append(.ended(result(at: end)))
             return events
         }
 
-        // New pops: none that could not finish coming up before the end.
+        // The rabbit: it hops on to another free hole, or comes on its own clock, never in a mole's place.
+        let rabbitUp = max(config.rabbitMinUpSec, pace.upSec * config.rabbitUpScale)
+        for h in hops where time + config.riseSec + rabbitUp <= end {
+            if let p = popRabbit(at: time, up: rabbitUp, hops: h.hopsLeft - 1, avoid: h.hole) { events.append(.popped(p)) }
+        }
+        if let r = nextRabbit, time >= r, let gap = pace.rabbitGapSec {
+            if !pops.contains(where: { $0.kind == .rabbit }), time + config.riseSec + rabbitUp <= end,
+               let p = popRabbit(at: time, up: rabbitUp, hops: pace.rabbitHops, avoid: nil) {
+                events.append(.popped(p))
+            }
+            nextRabbit = time + gap * Double.random(in: 0.75...1.25, using: &random)
+        }
+
+        // New pops: none that could not finish coming up before the end. The rabbit does not count toward `maxUp`.
         if time >= nextPop, time + config.riseSec + pace.upSec <= end {
             let busy = Set(pops.map(\.hole))
-            if pops.count < pace.maxUp {
+            if pops.filter({ $0.kind != .rabbit }).count < pace.maxUp {
                 var free = config.holes.indices.filter { !busy.contains($0) }
                 if free.count > 1, let last = lastHole { free.removeAll { $0 == last } }
                 if let hole = free.randomElement(using: &random) {
@@ -274,6 +319,19 @@ public struct MoleGarden: Sendable {
         return events
     }
 
+    /// A rabbit in a free hole (not `avoid`, and not the hole of the last pop if another is free).
+    private mutating func popRabbit(at time: Double, up: Double, hops: Int, avoid: Int?) -> MolePop? {
+        let busy = Set(pops.map(\.hole))
+        var free = config.holes.indices.filter { !busy.contains($0) && $0 != avoid }
+        if free.count > 1, let last = lastHole { free.removeAll { $0 == last } }
+        guard let hole = free.randomElement(using: &random) else { return nil }
+        var p = MolePop(id: nextID, hole: hole, kind: .rabbit, start: time, hideAt: time + config.riseSec + up, bonkedAt: nil)
+        p.hopsLeft = max(0, hops)
+        nextID += 1
+        pops.append(p)
+        return p
+    }
+
     /// A blink or wink that began at `onset`, with the aim from just before it (pt; nil: the lock decides).
     public mutating func bonk(onset: Double, aim: Vec2?) -> MoleEvent? {
         guard !ended, onset >= startTime else { return nil }
@@ -286,7 +344,7 @@ public struct MoleGarden: Sendable {
         if found == nil, let a = aim {
             // The nearest mole up within the assist reach, if the aim missed every one.
             var best: (Int, Double)?
-            for (j, p) in pops.enumerated() where p.kind != .hedgehog && bonkable(p) {
+            for (j, p) in pops.enumerated() where !p.kind.isDecoy && bonkable(p) {
                 let d = a.distance(to: holeCenter(p.hole))
                 if d <= reach * config.assistScale, d < (best?.1 ?? .infinity) { best = (j, d) }
             }
@@ -300,11 +358,11 @@ public struct MoleGarden: Sendable {
         }
         pops[i].bonkedAt = onset
         let p = pops[i]
-        if p.kind == .hedgehog {
-            tally.hedgehogHits += 1
+        if p.kind.isDecoy {
+            if p.kind == .rabbit { tally.rabbitHits += 1 } else { tally.hedgehogHits += 1 }
             combo = 0
             score = max(0, score - config.decoyPenalty)
-            return .hedgehogHit(p)
+            return .decoyHit(p)
         }
         combo += 1
         tally.bestCombo = max(tally.bestCombo, combo)

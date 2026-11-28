@@ -243,11 +243,11 @@ public struct MoleSwing: Equatable, Sendable {
     public static let duration = 0.42
 }
 
-/// «Кроты» in 3D: a mowed lawn with six molehills, a fence, trees and flowers; moles, golden moles and hedgehogs
-/// rise from the holes the rules give, and a mallet drops where the player blinks.
+/// «Кроты» in 3D: a mowed lawn with six molehills, a fence, trees and flowers; moles, golden moles, hedgehogs and the
+/// rabbit rise from the holes the rules give, and a mallet drops where the player blinks.
 public struct MoleStage: ToonScene {
     public enum Mesh: Int, CaseIterable {
-        case ground, props, grass, mound, pit, mole, golden, hedgehog, mallet, star, puff, ring
+        case ground, props, grass, mound, pit, mole, golden, hedgehog, mallet, star, puff, ring, rabbit
     }
 
     public let camera: ToonCamera
@@ -290,6 +290,7 @@ public struct MoleStage: ToonScene {
         m[Mesh.mole.rawValue] = Self.mole(body: ToonColor.hex(0x8A5A3C), crown: false)
         m[Mesh.golden.rawValue] = Self.mole(body: ToonColor.gold, crown: true)
         m[Mesh.hedgehog.rawValue] = Self.hedgehog()
+        m[Mesh.rabbit.rawValue] = Self.rabbit()
         m[Mesh.mallet.rawValue] = Self.mallet()
         m[Mesh.star.rawValue] = ToonMesh.star(outer: 1, inner: 0.45, depth: 0.3, color: ToonColor.gold)
         m[Mesh.puff.rawValue] = ToonMesh.sphere(radius: 1, segments: 10, rings: 6, color: ToonColor.sand)
@@ -336,7 +337,9 @@ public struct MoleStage: ToonScene {
         let rise = Float(p.rise(at: time, config: g.config))
         // A little overshoot on the way up: out of the hole with a hop.
         let k = state == .rising ? Self.backOut(rise) : rise
-        var y = -2.15 * s + k * (2.15 - 0.72) * s
+        // The rabbit is taller with its ears: it starts deeper, so no ear tip shows before it comes up.
+        let depth: Float = p.kind == .rabbit ? 2.7 : 2.15
+        var y = -depth * s + k * (depth - 0.72) * s
         var sx: Float = 1, sy: Float = 1, sway: Float = 0
         if state == .up { y += 0.04 * s * Float(sin(time * 6 + Double(p.id))) }
         if let b = p.bonkedAt {
@@ -348,10 +351,10 @@ public struct MoleStage: ToonScene {
             }
             sway = 0.18 * Float(sin((time - b) * 14)) * max(0, 1 - since / Float(g.config.dizzySec))
         }
-        let mesh: Mesh = p.kind == .hedgehog ? .hedgehog : p.kind == .golden ? .golden : .mole
+        let mesh = Self.mesh(p.kind)
         var tint = SIMD4<Float>(1, 1, 1, 1)
-        if p.kind == .hedgehog, let b = p.bonkedAt, time - b < 0.5 {
-            // The prickles hurt: a red flush.
+        if p.kind.isDecoy, let b = p.bonkedAt, time - b < 0.5 {
+            // Not this one: a red flush.
             let f = Float(1 - (time - b) / 0.5)
             tint = SIMD4(1, 1 - 0.45 * f, 1 - 0.5 * f, 1)
         }
@@ -370,7 +373,7 @@ public struct MoleStage: ToonScene {
             }
         }
         let top = c.y + y + 2.1 * s * sy
-        if state == .dizzy, let b = p.bonkedAt, p.kind != .hedgehog {
+        if state == .dizzy, let b = p.bonkedAt, !p.kind.isDecoy {
             for i in 0..<3 {
                 let a = Float(time - b) * 4.5 + Float(i) * 2.094
                 let at = SIMD3<Float>(c.x + cos(a) * s * 0.75, top + 0.18 * s + 0.08 * s * sin(a * 2), c.z + sin(a) * s * 0.5)
@@ -497,6 +500,60 @@ public struct MoleStage: ToonScene {
                 ball(SIMD3(0.13 * sx, 2.3, 0), SIMD3(0.15, 0.05, 0.08), ToonColor.emerald, 8)
             }
         }
+        return m
+    }
+
+    /// The mesh an actor of `kind` is drawn with.
+    public static func mesh(_ kind: MoleKind) -> Mesh {
+        switch kind {
+        case .mole: return .mole
+        case .golden: return .golden
+        case .hedgehog: return .hedgehog
+        case .rabbit: return .rabbit
+        }
+    }
+
+    /// A rabbit about 2.6 tall with its ears, facing +z: a round snow-white body, long ears with pink insides (one
+    /// bent at the tip), big dark eyes, a pink nose, buck teeth and a sky-blue neckerchief. Original design. It must
+    /// be left alone, so it looks friendly and nothing like a mole.
+    static func rabbit() -> ToonMesh {
+        let fur = ToonColor.hex(0xF7F3EA), shade = ToonColor.hex(0xE3DCCF), pink = ToonColor.hex(0xF2A7B5)
+        var m = ToonMesh.sphere(radius: 1, segments: 20, rings: 14, color: fur)
+            .transformed(ToonMatrix.translation(SIMD3(0, 1.0, 0)) * ToonMatrix.scale(SIMD3(0.78, 0.98, 0.72)))
+        func ball(_ at: SIMD3<Float>, _ size: SIMD3<Float>, _ c: SIMD3<Float>, _ seg: Int = 12) {
+            m.append(.sphere(radius: 1, segments: seg, rings: max(5, seg / 2 + 1), color: c),
+                     ToonMatrix.translation(at) * ToonMatrix.scale(size))
+        }
+        // Cheeks and muzzle.
+        ball(SIMD3(0, 1.22, 0.55), SIMD3(0.4, 0.3, 0.28), fur)
+        ball(SIMD3(0, 1.3, 0.8), SIMD3(0.1, 0.08, 0.07), pink, 8)
+        ball(SIMD3(0, 1.1, 0.78), SIMD3(0.09, 0.08, 0.04), ToonColor.cream, 8)
+        for sx in [Float(-1), 1] {
+            ball(SIMD3(0.27 * sx, 1.5, 0.58), SIMD3(0.12, 0.15, 0.08), ToonColor.ink, 10)
+            ball(SIMD3(0.24 * sx, 1.56, 0.65), SIMD3(0.04, 0.04, 0.02), ToonColor.cream, 6)
+            ball(SIMD3(0.42 * sx, 1.24, 0.52), SIMD3(0.11, 0.06, 0.04), pink, 8)
+            // Ears: long, a little apart and back; the left one bends over at the tip.
+            let base = SIMD3<Float>(0.24 * sx, 1.85, -0.05)
+            let tilt = ToonMatrix.rotationZ(-0.16 * sx) * ToonMatrix.rotationX(-0.12)
+            m.append(.sphere(radius: 1, segments: 12, rings: 8, color: fur),
+                     ToonMatrix.translation(base) * tilt * ToonMatrix.translation(SIMD3(0, 0.55, 0))
+                        * ToonMatrix.scale(SIMD3(0.17, 0.6, 0.1)))
+            m.append(.sphere(radius: 1, segments: 10, rings: 7, color: pink),
+                     ToonMatrix.translation(base) * tilt * ToonMatrix.translation(SIMD3(0, 0.55, 0.06))
+                        * ToonMatrix.scale(SIMD3(0.09, 0.45, 0.05)))
+            if sx < 0 {
+                m.append(.sphere(radius: 1, segments: 10, rings: 7, color: shade),
+                         ToonMatrix.translation(base) * tilt * ToonMatrix.translation(SIMD3(-0.12, 1.08, 0.02))
+                            * ToonMatrix.rotationZ(1.1) * ToonMatrix.scale(SIMD3(0.14, 0.24, 0.09)))
+            }
+            // Paws on the rim.
+            ball(SIMD3(0.42 * sx, 0.72, 0.55), SIMD3(0.2, 0.13, 0.17), fur, 10)
+        }
+        // A neckerchief.
+        m.append(.torus(radius: 0.55, tube: 0.09, segments: 18, sides: 5, color: ToonColor.sky),
+                 ToonMatrix.translation(SIMD3(0, 0.92, 0.04)) * ToonMatrix.scale(SIMD3(1.15, 0.7, 1.05)))
+        m.append(ArcadeProps.cone(color: ToonColor.sky, segments: 4),
+                 ToonMatrix.translation(SIMD3(0, 0.78, 0.66)) * ToonMatrix.rotationX(.pi) * ToonMatrix.scale(SIMD3(0.18, 0.22, 0.06)))
         return m
     }
 

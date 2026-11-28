@@ -1037,7 +1037,7 @@ final class AppModel: ObservableObject {
             : FishingSession(game: .fishing, byEye: byEye, bot: bot, zoneFloorPt: floor, roundSec: roundSec)
         let teach = byEye && !bot
         s.onLabel = { [weak self] target, host in
-            // A blink that bonked a mole or hooked a fish: the player looked at it, so the aim learns from it.
+            // A blink that bonked a mole or a hold that caught a fish: the player looked at it, so the aim learns from it.
             if teach { _ = self?.learnLabel(target: target, before: host, source: game.rawValue) }
         }
         s.onBegin = { [weak self] level, host in

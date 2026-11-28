@@ -1,8 +1,8 @@
 import Foundation
 import QuartzCore
 
-/// The blink arcades (Aziz, 2026-11-27): «Кроты», bonk the mole by blinking at its hole, and «Рыбалка», hold a
-/// fish with the eyes until it bites, blink to hook it and lead it to the jetty with the eyes.
+/// The arcades (Aziz, 2026-11-27): «Кроты», bonk the mole by blinking at its hole (a rabbit and a hedgehog must be
+/// left alone), and «Рыбалка», hold a fish with the eyes until it is caught, as a meteor is burnt.
 enum ArcadeGame: String, CaseIterable {
     case moles, fishing
 
@@ -44,11 +44,10 @@ struct ArcadeHud: Equatable {
     var combo = 0
     var landed = 0
     var goal = 0
-    /// A fish on the line: how far it is reeled in (0...1) and where it is (pt).
+    /// The fish under the eyes: how far its hold has come (0...1), where it is and the ring's radius (pt).
     var reel: Double?
     var reelSpot: Vec2?
-    /// A fish biting: blink now. Where it is (pt).
-    var biteSpot: Vec2?
+    var reelRadius = 40.0
 }
 
 /// A short word or number that rises from a spot on the screen (pt).
@@ -97,6 +96,9 @@ class ArcadeSession: ObservableObject, ToonSource {
     @Published private(set) var countdown = 3
     @Published private(set) var outcome: ArcadeOutcome? = nil
     @Published private(set) var stars: [Int]
+    /// The pause plate is up: the round's clock stands still.
+    @Published private(set) var paused = false
+    private var pausedAt = 0.0
 
     private(set) var screen = Vec2(844, 390)
     /// The aim this frame (pt): the eyes', the finger's or the bot's.
@@ -149,6 +151,23 @@ class ArcadeSession: ObservableObject, ToonSource {
 
     func sceneChanged() { toonSceneVersion += 1 }
 
+    /// The pause plate went up (true) or down: the subclass stops what hums.
+    func pauseChanged(_ on: Bool) {}
+
+    /// Pauses or resumes the round; the time on the pause plate does not count.
+    func setPaused(_ on: Bool) {
+        guard on != paused, phase == .playing || phase == .countdown || !on else { return }
+        paused = on
+        let now = CACurrentMediaTime()
+        if on {
+            pausedAt = now
+        } else {
+            startHost += now - pausedAt
+            eyes = WinkBeatEyes(config: WinkBeatEyesConfig(blinksPlay: true))
+        }
+        pauseChanged(on)
+    }
+
     /// A stamp at `spot`.
     func stamp(_ text: String, at spot: Vec2, _ tone: ArcadeStamp.Tone) {
         stampID += 1
@@ -168,7 +187,7 @@ class ArcadeSession: ObservableObject, ToonSource {
         out.nextOpen = o.level < ArcadeGame.levels && ArcadeProgress.open(game, level: o.level + 1, stars: stars)
         outcome = out
         phase = .done
-        hud.biteSpot = nil
+        paused = false
         hud.reel = nil
         onEnd?(out, startHost, host(of: t))
         if bot {
@@ -212,6 +231,7 @@ class ArcadeSession: ObservableObject, ToonSource {
     }
 
     func toLevels() {
+        if paused { setPaused(false) }
         phase = .levels
         outcome = nil
         stamps = []
@@ -228,7 +248,7 @@ class ArcadeSession: ObservableObject, ToonSource {
     /// One tracking frame (eye mode): host time, the calibrated aim (pt), the lids (0 open ... 1 closed), nil
     /// when no face is seen.
     func sample(host: Double, aim raw: Vec2?, lids: (left: Double, right: Double)?) {
-        guard byEye, !bot, phase == .playing || phase == .countdown else { return }
+        guard byEye, !bot, !paused, phase == .playing || phase == .countdown else { return }
         guard let lids else {
             eyes.faceLost()
             aim = nil
@@ -255,11 +275,12 @@ class ArcadeSession: ObservableObject, ToonSource {
         aim = p
     }
 
-    /// The finger lifted: the blink of finger play. The aim stays where it was, so a fish can still be led.
+    /// The finger lifted: the blink of finger play.
     func release(at p: Vec2) {
-        guard !byEye, !bot, phase == .playing else { return }
-        touchAim = p
-        aim = p
+        guard !byEye, !bot, !paused, phase == .playing else { return }
+        // A lifted finger stops holding a fish; for a mole the lift is the blink, at the spot it left.
+        touchAim = game == .fishing ? nil : p
+        aim = touchAim
         let now = CACurrentMediaTime()
         act(t: now - startHost, host: now, aim: p)
     }
@@ -275,6 +296,7 @@ class ArcadeSession: ObservableObject, ToonSource {
 
     private func tick() {
         let now = CACurrentMediaTime()
+        if paused { return }
         switch phase {
         case .levels:
             // CI: the bot picks level 3 after a look at the choice.
@@ -358,14 +380,14 @@ final class MoleSession: ArcadeSession {
         for e in events {
             switch e {
             case .popped(let p):
-                if bot, p.kind != .hedgehog || Double.random(in: 0..<1, using: &botRandom) < 0.1 {
+                if bot, !p.kind.isDecoy || Double.random(in: 0..<1, using: &botRandom) < 0.1 {
                     botPlan.append((t + 0.45 + 0.2 * Double.random(in: 0..<1, using: &botRandom), p.hole))
                 }
                 onEvent?("mole_pop_\(p.kind.rawValue)", host(of: t), g.holeCenter(p.hole), nil, g.score)
             case .escaped(let p):
                 onEvent?("mole_escaped", host(of: t), g.holeCenter(p.hole), nil, g.score)
-            case .hedgehogLeft(let p):
-                onEvent?("hedgehog_left", host(of: t), g.holeCenter(p.hole), nil, g.score)
+            case .decoyLeft(let p):
+                onEvent?("\(p.kind.rawValue)_left", host(of: t), g.holeCenter(p.hole), nil, g.score)
             case .ended(let r):
                 finish(summary(r), t: t)
             default:
@@ -378,6 +400,8 @@ final class MoleSession: ArcadeSession {
         var lines = [L("Кротов: {0} из {1}", r.hits, r.hits + r.escaped), L("Лучшая серия: {0}", r.bestCombo)]
         if r.golden > 0 { lines.append(L("Золотых кротов: {0}", r.golden)) }
         if r.hedgehogHits > 0 { lines.append(L("Ёжиков задето: {0}", r.hedgehogHits)) }
+        if r.rabbitHits > 0 { lines.append(L("Кроликов задето: {0}", r.rabbitHits)) }
+        if r.rabbitsLeft > 0, r.rabbitHits == 0 { lines.append(L("Кролика не тронули ни разу!")) }
         if let m = r.meanReactionSec { lines.append(L("Среднее время до моргания: {0} с", String(format: "%.2f", m))) }
         return ArcadeOutcome(game: .moles, level: r.level, stars: r.stars, score: r.score, accuracy: r.accuracy,
                              hits: r.hits, misses: r.escaped + r.whiffs, lines: lines, nextOpen: false)
@@ -395,12 +419,12 @@ final class MoleSession: ArcadeSession {
             stamp("+\(points)", at: c, p.kind == .golden ? .gold : .good)
             onLabel?(c, host)
             onEvent?(g.lastAssisted ? "mole_hit_assist" : "mole_hit", host, c, reaction, g.score)
-        case let .hedgehogHit(p)?:
+        case let .decoyHit(p)?:
             let c = g.holeCenter(p.hole)
             swings.append(MoleSwing(spot: c, hole: p.hole, time: t, hit: true))
-            stamp(L("Ой, ёжик!"), at: c, .bad)
+            stamp(p.kind == .rabbit ? L("Ой, кролик!") : L("Ой, ёжик!"), at: c, .bad)
             onLabel?(c, host)
-            onEvent?("hedgehog_hit", host, c, nil, g.score)
+            onEvent?("\(p.kind.rawValue)_hit", host, c, nil, g.score)
         case let .whiff(hole)?:
             swings.append(MoleSwing(spot: hole.map { g.holeCenter($0) } ?? spot, hole: hole, time: t, hit: false))
             onEvent?("mole_whiff", host, spot, nil, g.score)
@@ -442,12 +466,15 @@ final class MoleSession: ArcadeSession {
 
 // MARK: - «Рыбалка»
 
+/// Fishing as the meteors play (Aziz, 2026-11-28): hold the eyes on a fish and the phone hums as the hold fills, then
+/// taps with the meteors' crack and pop when it is caught; the fish goes into the catch at once. Blinks do nothing.
 final class FishingSession: ArcadeSession {
     private(set) var pond: FishingPond?
     private var stage: PondStage?
     private var moments: [PondMoment] = []
     private var over: [ToonDraw] = []
-    private var botBlinkAt: Double?
+    private var sounds: PopSounds?
+    private var charging = false
 
     override var toonScene: ToonScene? { stage }
 
@@ -462,56 +489,73 @@ final class FishingSession: ArcadeSession {
         }
         moments.removeAll()
         over.reserveCapacity(256)
-        botBlinkAt = nil
+        if sounds == nil { sounds = PopSounds(seed: seed) }
+        sounds?.prepare(seed: seed)
+        sounds?.resetLadder()
+        Haptics.shared.prepare()
+        endCharge()
     }
 
     override func stepRound(t: Double, aim: Vec2?) {
         guard let events = pond?.update(time: t, aim: aim), let p = pond else { return }
         for e in events {
             switch e {
-            case .bite(let f):
-                if bot { botBlinkAt = t + 0.4 }
-                onEvent?("fish_bite_\(f.kind.rawValue)", host(of: t), f.position, nil, p.score)
-            case .letGo(let f):
-                moments.append(PondMoment(kind: .splash, spot: f.position, time: t))
-                stamp(L("Сорвалась"), at: f.position, .quiet)
-                onEvent?("fish_let_go", host(of: t), f.position, nil, p.score)
-            case let .landed(f, points):
-                moments.append(PondMoment(kind: .landed(f.kind), spot: f.position, heading: f.heading, time: t))
+            case .looked(let f):
+                if !bot { sounds?.charge(pan: pan(f.position)) }
+                onEvent?("fish_look_\(f.kind.rawValue)", host(of: t), f.position, nil, p.score)
+            case let .caught(f, points, held):
+                endCharge()
+                moments.append(PondMoment(kind: .caught(f.kind), spot: f.position, heading: f.heading, time: t))
                 stamp("+\(points)", at: f.position, f.kind == .goldfish ? .gold : .good)
-                onEvent?("fish_landed_\(f.kind.rawValue)", host(of: t), f.position, nil, p.score)
-            case .snapped(let f):
-                moments.append(PondMoment(kind: .splash, spot: f.position, time: t))
-                stamp(L("Леска!"), at: f.position, .bad)
-                onEvent?("fish_snapped", host(of: t), f.position, nil, p.score)
+                if !bot {
+                    Haptics.shared.lock()
+                    sounds?.lock(pan: pan(f.position), at: host(of: t))
+                }
+                onLabel?(f.position, host(of: t))
+                onEvent?("fish_caught_\(f.kind.rawValue)", host(of: t), f.position, held, p.score)
             case .ended(let r):
+                endCharge()
                 finish(summary(r), t: t)
-            case .hooked:
-                break
             }
+        }
+        // The hum of the hold, as on a meteor: on while a fish is under the eyes, rising with its hold.
+        if !bot, phase == .playing, let h = p.holding {
+            if !charging { Haptics.shared.chargeBegan(); charging = true }
+            Haptics.shared.chargeProgress(h.progress)
+        } else if charging {
+            endCharge()
         }
         moments.removeAll { t - $0.time > $0.duration }
     }
 
-    private func summary(_ r: FishingResult) -> ArcadeOutcome {
-        var lines = [L("Поймано: {0} из {1}", r.landed, r.goal)]
-        if r.letGo > 0 { lines.append(L("Сорвалось с крючка: {0}", r.letGo)) }
-        if r.snapped > 0 { lines.append(L("Оборвали леску: {0}", r.snapped)) }
-        if let f = r.followShare { lines.append(L("Взгляд вёл рыбу: {0}% времени", Int((f * 100).rounded()))) }
-        return ArcadeOutcome(game: .fishing, level: r.level, stars: r.stars, score: r.score, accuracy: r.accuracy,
-                             hits: r.landed, misses: r.letGo + r.snapped, lines: lines, nextOpen: false)
+    private func endCharge() {
+        guard charging else { return }
+        charging = false
+        Haptics.shared.chargeEnded()
     }
 
-    override func act(t: Double, host: Double, aim: Vec2?) {
-        guard var p = pond, !p.ended else { return }
-        let e = p.blink(onset: t, aim: aim)
-        pond = p
-        if case let .hooked(f, reaction)? = e {
-            stamp(L("Есть!"), at: f.position, .good)
-            onLabel?(f.position, host)
-            onEvent?(p.lastAssisted ? "fish_hooked_assist" : "fish_hooked", host, f.position, reaction, p.score)
-        }
+    private func pan(_ p: Vec2) -> Float { Float(max(-1, min(1, (p.x / max(1, screen.x)) * 2 - 1))) * 0.8 }
+
+    override func pauseChanged(_ on: Bool) {
+        if on { endCharge(); sounds?.resetLadder() }
     }
+
+    override func leave() {
+        endCharge()
+        sounds?.hold(false)
+        super.leave()
+    }
+
+    private func summary(_ r: FishingResult) -> ArcadeOutcome {
+        var lines = [L("Поймано: {0} из {1}", r.landed, r.goal)]
+        if let m = r.meanHoldSec { lines.append(L("Среднее время взгляда на рыбу: {0} с", String(format: "%.1f", m))) }
+        lines.append(L("Время: {0}", ArcadeView.clock(Int(r.durationSec.rounded()))))
+        return ArcadeOutcome(game: .fishing, level: r.level, stars: r.stars, score: r.score, accuracy: r.accuracy,
+                             hits: r.landed, misses: max(0, r.goal - r.landed), lines: lines, nextOpen: false)
+    }
+
+    /// Blinks do nothing here: the hold catches.
+    override func act(t: Double, host: Double, aim: Vec2?) {}
 
     override func paint(into draws: inout [ToonDraw], t: Double) {
         guard let stage, let p = pond else { return }
@@ -525,30 +569,20 @@ final class FishingSession: ArcadeSession {
         hud.landed = r.landed
         hud.goal = r.goal
         hud.secondsLeft = Int(ceil(p.remaining(at: t)))
-        hud.biteSpot = p.fish.first { if case .biting = $0.state { return true } else { return false } }?.position
-        if let h = p.hooked, case let .hooked(_, _, progress, _) = h.state {
-            hud.reel = progress
-            hud.reelSpot = h.position
+        if let h = p.holding {
+            hud.reel = h.progress
+            hud.reelSpot = h.fish.position
+            hud.reelRadius = p.radius(h.fish) * 1.6
         } else {
             hud.reel = nil
             hud.reelSpot = nil
         }
     }
 
-    /// CI: follows the hooked fish, else the fish nearest the top; blinks 0.4 s after a bite.
+    /// CI: holds the fish nearest the top until it is caught, then the next.
     override func botStep(t: Double) -> Vec2? {
         guard let p = pond else { return nil }
-        if let b = botBlinkAt, t >= b {
-            botBlinkAt = nil
-            act(t: t, host: host(of: t), aim: target(p))
-        }
-        return target(p)
-    }
-
-    private func target(_ p: FishingPond) -> Vec2? {
-        if let h = p.hooked { return h.position }
-        if let b = p.fish.first(where: { if case .biting = $0.state { return true } else { return false } }) { return b.position }
-        return p.fish.filter { if case .fleeing = $0.state { return false } else { return true } }
-            .min { $0.position.y < $1.position.y }?.position
+        if let h = p.holding { return h.fish.position }
+        return p.fish.min { $0.position.y < $1.position.y }?.position
     }
 }

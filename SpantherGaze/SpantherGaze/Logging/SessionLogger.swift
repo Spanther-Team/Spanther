@@ -312,7 +312,7 @@ final class SessionLogger {
 
     /// The blink arcades. `arcade_start` (time = the round's start) and `arcade_end` (score, accuracy 0...1, stars
     /// in the level column's neighbour `judgement`): the game and the level. Event rows (`mole_hit`, `mole_whiff`,
-    /// `fish_bite_perch`, `fish_hooked`, …, time = the blink's onset or the rules' moment): the spot (screen pt),
+    /// `rabbit_hit`, `fish_look_perch`, `fish_caught_perch`, …, time = the blink's onset or the rules' moment): the spot (screen pt),
     /// the time from the target's start to the blink (s) and the score after it. `arcade_perf` every 2 s of play:
     /// the stage's frames per second, its GPU time per frame (ms) and whether heat turned the shadows off (`hold`).
     func arcade(kind: String, time: Double, game: String, level: Int? = nil, spot: Vec2? = nil, reaction: Double? = nil,

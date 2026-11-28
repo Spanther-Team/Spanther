@@ -39,7 +39,7 @@ final class StageDumpTests: XCTestCase {
         var swings: [MoleSwing] = []
         while t < 12 {
             for e in g.update(time: t, aim: g.holeCenter(4)) {
-                if case .popped(let p) = e, p.kind != .hedgehog, !bonked, t > 8 {
+                if case .popped(let p) = e, !p.kind.isDecoy, !bonked, t > 8 {
                     _ = g.bonk(onset: t + 0.3, aim: g.holeCenter(p.hole))
                     bonked = true
                     swings.append(MoleSwing(spot: g.holeCenter(p.hole), hole: p.hole, time: t + 0.3, hit: true))
@@ -56,12 +56,8 @@ final class StageDumpTests: XCTestCase {
         let pond = PondStage(pond: p)
         let id = p.fish[0].id
         t = 0
-        while t < 2.2 {
-            _ = p.update(time: t, aim: p.fish.first { $0.id == id }?.position)
-            t += 1.0 / 60
-        }
-        _ = p.blink(onset: t, aim: p.fish.first { $0.id == id }?.position)
-        for _ in 0..<40 {
+        // Halfway through the hold of one fish: its ring and bubbles show.
+        while t < 0.55 {
             _ = p.update(time: t, aim: p.fish.first { $0.id == id }?.position)
             t += 1.0 / 60
         }

@@ -26,6 +26,20 @@ final class GameHUD: ObservableObject {
     @Published var decoyErrors = 0
     /// Stones burnt in a row, broken by a stone reaching Earth or a look at a red sign, and the celebration.
     let fx = StreakFX()
+    /// A level just won: its celebration card is up and the play waits (Aziz, 2026-11-28: a child needs to see the
+    /// level end, not just slide into the next one).
+    @Published var levelDone: LevelDone?
+}
+
+/// The card of a won level: which level, its stars (never fewer than one: the card rewards, it does not grade) and
+/// the share of meteors burnt.
+struct LevelDone: Equatable {
+    var level: Int
+    var next: Int
+    var ratio: Double
+    var serial: Int
+
+    var stars: Int { ratio >= 0.85 ? 3 : ratio >= 0.6 ? 2 : 1 }
 }
 
 /// Draws GameModel as sky-stones over the living garden, which the scene draws itself (GardenNode): the SKView is
@@ -80,6 +94,10 @@ final class GameScene: SKScene {
     private var reticleStarved = false
     private var touchPoint: Vec2?
     private var lastTime: TimeInterval = 0
+    /// The level's celebration holds the play until this host time.
+    private var celebrateUntil = 0.0
+    private var levelsWon = 0
+    static let celebrationSec = 3.4
     private let hitHaptic = UINotificationFeedbackGenerator()
     private var tapBurst = BurstCounter(count: 3, windowSec: 2)
 
@@ -337,6 +355,9 @@ final class GameScene: SKScene {
         if frameIndex % 2 == 0 { gardenNode?.update(time: CACurrentMediaTime()) }
         let reloadBlinked = blinkReload()
         guard let m = model, !paused_ else { return }
+        // A won level's card and fireworks: the sky is clear and the play waits for them.
+        if CACurrentMediaTime() < celebrateUntil { return }
+        if hud.levelDone != nil { hud.levelDone = nil }
         var botGaze: GazeInput?
         #if DEBUG
         if autoplay { botGaze = botStep(m) }
@@ -419,7 +440,7 @@ final class GameScene: SKScene {
                 hud.shields = m.shields
                 onGameEvent?("recharge", m.energy, lvl)
                 flash(L("Щиты кончились и снова заряжены. Держись до конца уровня!"))
-            case .levelEnded(_, let ratio, let next):
+            case .levelEnded(let finished, let ratio, let next):
                 // A timed level ends with meteors still up: they fade away with it.
                 stones.values.forEach(fadeAway)
                 stones.removeAll()
@@ -428,9 +449,7 @@ final class GameScene: SKScene {
                 hud.shields = m.shields
                 hud.energy = m.energy
                 onGameEvent?("level", m.energy, next)
-                flash(m.config.levelTimeLimitSec == nil
-                      ? String(format: L("Сбито %.0f%% · Уровень %d"), ratio * 100, next)
-                      : String(format: L("Уровень пройден! Сбито %.0f%% · Уровень %d"), ratio * 100, next))
+                celebrateLevel(finished, next: next, ratio: ratio)
             case .pausedForFace(let on):
                 hud.lookBack = on
             }
@@ -570,6 +589,23 @@ final class GameScene: SKScene {
         return target.map { .point($0.position) } ?? .notLooking
     }
     #endif
+
+    /// A won level: its card, fireworks over the sky, two rising chimes and the milestone's haptic taps; the play
+    /// waits `celebrationSec` for them.
+    private func celebrateLevel(_ level: Int, next: Int, ratio: Double) {
+        levelsWon += 1
+        celebrateUntil = CACurrentMediaTime() + Self.celebrationSec
+        sounds?.resetLadder()
+        hud.levelDone = LevelDone(level: level, next: next, ratio: ratio, serial: levelsWon)
+        let w = Double(size.width), h = Double(size.height)
+        let spots = [(0.22, 0.34), (0.78, 0.3), (0.36, 0.62), (0.66, 0.58)].map { CGPoint(x: $0.0 * w, y: $0.1 * h) }
+        hud.fx.finale(at: spots, after: 0.15, tier: 3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+            guard let self, CACurrentMediaTime() < self.celebrateUntil else { return }
+            StreakChimes.shared.play(tier: 2)
+            Haptics.shared.milestone(tier: 2)
+        }
+    }
 
     private func flash(_ s: String) {
         hud.banner = s
