@@ -69,6 +69,10 @@ final class GameScene: SKScene {
     var zoneFloorPt = 0.0
     /// The play has red signs to pass by.
     var decoysOn = false
+    /// The level play starts on: the 30-day plan's, else 1.
+    var startLevel = 1
+    /// A timed level ended: which one and the share of its meteors burned (0...1).
+    var onLevelEnd: ((_ level: Int, _ ratio: Double) -> Void)?
     /// Eye mode: the gaze point is the one kept from before a blink (AppModel.gazeHeld).
     var gazeHeld: () -> Bool = { false }
     /// A red sign left the play (looked at or passed by), with where it was (screen pt).
@@ -181,7 +185,7 @@ final class GameScene: SKScene {
         bubbleExplained = false
         chargingID = nil
         let m = GameModel(config: config, screen: Vec2(size.width, size.height), marginPt: marginPt,
-                          targetScale: targetScale, zoneFloorPt: zoneFloorPt, decoys: decoysOn)
+                          targetScale: targetScale, zoneFloorPt: zoneFloorPt, decoys: decoysOn, startLevel: startLevel)
         model = m
         let scale = view?.contentScaleFactor ?? 2
         // The garden behind the play, still when Earth shakes (it is not in `world`).
@@ -450,6 +454,7 @@ final class GameScene: SKScene {
                 hud.energy = m.energy
                 onGameEvent?("level", m.energy, next)
                 celebrateLevel(finished, next: next, ratio: ratio)
+                onLevelEnd?(finished, ratio)
             case .pausedForFace(let on):
                 hud.lookBack = on
             }

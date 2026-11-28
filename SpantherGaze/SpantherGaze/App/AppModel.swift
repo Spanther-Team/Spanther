@@ -9,6 +9,8 @@ enum Route: Equatable {
     case check
     case result
     case game
+    /// The 30-day plan: today's training, the 30 days, the weekly checks, the focus by time of day.
+    case plan
     /// Measures one-eye winks, the input of the rhythm mode.
     case winkTest
     /// Rhythm mode: notes land on the beat of a track; look at each one and wink as it lands.
@@ -92,6 +94,11 @@ final class AppModel: ObservableObject {
             if oldValue == .pursuit, route != .pursuit { dropPursuit() }
             if oldValue == .probe, route != .probe { dropProbe() }
             if route == .menu, playerChangedInSync { playerChangedBySync() }
+            if route == .menu || route == .plan {
+                // Back from a play: it is no longer the plan's block, and a rest reminder that is due shows now.
+                planBlockOpen = false
+                restCheck()
+            }
             updateAmbient()
         }
     }
@@ -156,7 +163,7 @@ final class AppModel: ObservableObject {
     /// Host time the app started, when the garden begins to grow.
     let launchTime = CACurrentMediaTime()
     /// The app is in front (scene phase active).
-    private var active = true
+    private(set) var active = true
     /// The screen brightness before night vision raised it, to give back on the menu or in the background.
     private var savedBrightness: CGFloat?
     /// Where the calibration's result leads (`continueAfterCalibration`): the menu after the session's first
@@ -253,6 +260,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var winkBeat: WinkBeatSession?
     /// A blink arcade open (`openArcade`).
     @Published private(set) var arcade: ArcadeSession?
+
+    // The 30-day plan (AppModel+Plan.swift).
+    /// The playing player's plan: their days, weekly checks and every play's focus.
+    @Published var plan = PlanState()
+    /// Today's plan day in progress: its blocks and how the played ones went. In memory only.
+    @Published var planRun: PlanRun?
+    /// The play on screen is the plan's current block (set when the plan opens it, cleared back on the menu or the plan).
+    var planBlockOpen = false
+    /// «Пора отдохнуть» is up (the soft daily limit).
+    @Published var restReminder = false
+    /// The day's play time for the soft limit; saved for the player (`PlayTimeGuard`).
+    var playTime = PlayTimeGuard(day: "")
+    var playClock: Timer?
+    var playClockTicks = 0
     /// The report of the rhythm play that just ended, for its results screen.
     @Published private(set) var rhythmSummary: SessionSummary?
     private var rhythmTimer: Timer?
@@ -336,6 +357,7 @@ final class AppModel: ObservableObject {
             sessions = Self.demoSessions()
             childCode = "К-07"
             if demo == "summary" { lastSummary = sessions.last { $0.game == .meteors && $0.childCode == "К-07" } }
+            if demo == "plan" { route = .plan }
         }
         #endif
         tracker.onSample = { [weak self] s in self?.handle(s) }
@@ -351,6 +373,8 @@ final class AppModel: ObservableObject {
         #endif
         WinkBeatProgress.profiles = profiles
         ArcadeProgress.profiles = profiles
+        reloadPlan()
+        startPlayClock()
         account.onActiveChanged = { [weak self] in self?.playerChangedBySync() }
         bringKeptCalibrationToProfile()
         // A child picked on «Кто играет?» plays under their code, so the plays and the sessions agree. A player
@@ -427,6 +451,7 @@ final class AppModel: ObservableObject {
         }
         playerChangedInSync = false
         childCode = profiles.progress(Self.sessionsCodeKey) ?? ""
+        reloadPlan()
         dropCalibration(forgetKept: false)
         gaze = .lost
         logger = SessionLogger()
@@ -435,6 +460,7 @@ final class AppModel: ObservableObject {
     }
 
     private func playerChanged() {
+        reloadPlan()
         dropCalibration(forgetKept: false)
         gaze = .lost
         logger = SessionLogger()
@@ -962,6 +988,10 @@ final class AppModel: ObservableObject {
                                 measuredErrorPt: byEye && !bot ? report?.meanErrorPt ?? 0 : 0,
                                 zoneFloorPt: byEye && !bot ? zoneFloorPt : 0, assistPt: 2.8 * ptPerCm)
         let teach = byEye && !bot
+        if planBlockOpen, let b = planBlock, b.mode == .circles {
+            w.planned = true
+            w.difficulty = b.level >= 2 ? .normal : .easy
+        }
         w.onStart = { [weak self] target, host in
             // The start disc was winked at: the player looked at it, so the aim is recentred on it.
             if teach { _ = self?.learnLabel(target: target, before: host, source: "winkbeat-start") }
@@ -985,6 +1015,7 @@ final class AppModel: ObservableObject {
         w.onEnd = { [weak self] host, play in
             self?.logger.rhythmEnd(time: host, score: play.score, accuracy: play.accuracy, latency: play.latencySec)
             if let began { self?.keepWinkBeat(play, byEye: byEye, started: began.date, seconds: host - began.host) }
+            if !bot { self?.playEnded(.circles, accuracy: play.accuracy, reactionSec: nil, after: 3) }
         }
         return w
     }
@@ -1016,6 +1047,21 @@ final class AppModel: ObservableObject {
         route = .arcade(game)
     }
 
+    /// A plan block ended: its play screen closes and the plan comes back.
+    func closePlayForPlan() {
+        switch route {
+        case .arcade:
+            arcade?.leave()
+            arcade = nil
+        case .winkBeat:
+            winkBeat?.leave()
+            winkBeat = nil
+        case .game: break
+        default: return
+        }
+        route = .plan
+    }
+
     /// Back to the menu from an arcade.
     func leaveArcade() {
         arcade?.leave()
@@ -1032,9 +1078,13 @@ final class AppModel: ObservableObject {
         if let i = args.firstIndex(of: "-SpantherArcadeSec"), i + 1 < args.count { roundSec = Double(args[i + 1]) }
         #endif
         let floor = byEye && !bot ? zoneFloorPt : 0
+        let planMode: PlanMode = game == .moles ? .moles : .fishing
+        let planned: PlanBlock? = planBlockOpen && planBlock?.mode == planMode ? planBlock : nil
+        if let b = planned, roundSec == nil { roundSec = b.seconds }
         let s: ArcadeSession = game == .moles
             ? MoleSession(game: .moles, byEye: byEye, bot: bot, zoneFloorPt: floor, roundSec: roundSec)
             : FishingSession(game: .fishing, byEye: byEye, bot: bot, zoneFloorPt: floor, roundSec: roundSec)
+        s.planLevel = planned?.level
         let teach = byEye && !bot
         s.onLabel = { [weak self] target, host in
             // A blink that bonked a mole or a hold that caught a fish: the player looked at it, so the aim learns from it.
@@ -1053,6 +1103,7 @@ final class AppModel: ObservableObject {
             self?.logger.arcade(kind: "arcade_end", time: end, game: game.rawValue, level: o.level, score: o.score,
                                 accuracy: o.accuracy, stars: o.stars)
             self?.keepArcade(o, byEye: byEye, seconds: end - start)
+            if !bot { self?.playEnded(planMode, accuracy: o.accuracy, reactionSec: o.reactionSec, after: 2.5) }
         }
         return s
     }

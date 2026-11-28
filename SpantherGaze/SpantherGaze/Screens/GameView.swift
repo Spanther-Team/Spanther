@@ -29,6 +29,8 @@ struct GameView: View {
                 app.gamePaused = p
             }
             .onChange(of: app.showDebug) { d in scene?.showAim = d }
+            // The rest reminder comes up over the play: the play waits on its pause plate behind it.
+            .onChange(of: app.restReminder) { r in if r { paused = true } }
         }
         .ignoresSafeArea()
     }
@@ -44,6 +46,7 @@ struct GameView: View {
         s.targetScale = app.targetScale
         s.zoneFloorPt = app.zoneFloorPt
         s.decoysOn = app.decoysOn
+        s.startLevel = app.planMeteorLevel ?? 1
         let model = app
         #if DEBUG
         s.autoplay = app.autoplay != nil
@@ -60,6 +63,7 @@ struct GameView: View {
         s.blinkReload = { [weak model] in model?.consumeBlinkReload() ?? false }
         s.pendingBlinks = { [weak model] in model?.pendingBlinks ?? 0 }
         s.onGameEvent = { [weak model] kind, energy, level in model?.logGameEvent(kind: kind, energy: energy, level: level) }
+        s.onLevelEnd = { [weak model] level, ratio in model?.meteorLevelEnded(level, ratio: ratio) }
         s.onLookedAt = { [weak model] p in model?.lookedAtMeteor = p }
         app.playFX = s.hud.fx
         return s

@@ -64,6 +64,7 @@ struct RootView: View {
             Group {
                 switch app.route {
                 case .menu: MenuView()
+                case .plan: PlanView()
                 case .calibration: CalibrationView(kind: .calibration)
                 case .check: CalibrationView(kind: .check)
                 case .result: ResultView()
@@ -85,6 +86,7 @@ struct RootView: View {
             // them keeps growing).
             .id(startGate.language)
             .environment(\.locale, Loc.locale)
+            if app.restReminder { RestReminderCard().transition(.opacity) }
             if app.showDebug { DebugOverlay().allowsHitTesting(false) }
         }
         // A new menu screen springs in from the right; the old one fades under it. Never into the probe: its 90
@@ -100,7 +102,7 @@ struct RootView: View {
     private var screenTransition: AnyTransition {
         if reduceMotion { return .opacity }
         switch app.route {
-        case .menu, .result, .clinic:
+        case .menu, .plan, .result, .clinic:
             return .asymmetric(insertion: .offset(x: 90).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
                                removal: .opacity)
         default:
@@ -120,7 +122,7 @@ struct RootView: View {
             ProbeLook.paper.ignoresSafeArea()
         case .calibration, .check, .rhythm, .pursuit, .game, .syncCheck, .winkBeat, .arcade:
             Atlas.paper.ignoresSafeArea()
-        case .menu, .result, .clinic:
+        case .menu, .plan, .result, .clinic:
             ZStack {
                 SunlitBackdrop()
                 LivingBackground(growFrom: app.launchTime)

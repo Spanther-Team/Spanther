@@ -543,8 +543,8 @@ jobs:
           done
 
           # The report screens with made-up plays (-SpantherDemoReport): the summary after a meteor play, a
-          # child's history, and the settings sheet.
-          for page in summary history settings; do
+          # child's history, the settings sheet, and the 30-day plan.
+          for page in summary history settings plan; do
             xcrun simctl launch --stdout="$OUT/report-$page.stdout.log" --stderr="$OUT/report-$page.stderr.log" "$UDID" "$BID" -SpantherDemoReport "$page"
             sleep 8; shot "report-$page"
             if running; then pass "report $page: app running"; else fail "report $page: app not running"; fi
@@ -557,7 +557,7 @@ jobs:
             sleep 8; shot "lang-$lang-menu"
             if running; then pass "menu in $lang: app running"; else fail "menu in $lang: app not running"; fi
             xcrun simctl terminate "$UDID" "$BID" || true
-            for page in summary history settings; do
+            for page in summary history settings plan; do
               xcrun simctl launch "$UDID" "$BID" -SpantherDemoReport "$page" -SpantherGateLanguage "$lang"
               sleep 8; shot "lang-$lang-report-$page"
               if running; then pass "report $page in $lang: app running"; else fail "report $page in $lang: app not running"; fi
@@ -620,7 +620,7 @@ jobs:
           fi
           xcrun simctl terminate "$SE" "$BID" || true
           # The history, the report's widest screen; the summary with its four tiles; the settings sheet.
-          for page in history summary settings; do
+          for page in history summary settings plan; do
             xcrun simctl launch "$SE" "$BID" -SpantherDemoReport "$page"
             sleep 8
             xcrun simctl io "$SE" screenshot --type=png "$OUT/tmp.png" >/dev/null 2>&1 \

@@ -98,6 +98,7 @@ struct MenuView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            if app.planCounts { planBanner }
             // Three plates of one height: the tallest text sets it, and the buttons line up along the bottom.
             HStack(alignment: .top, spacing: 12) {
                 meteorPlate
@@ -334,6 +335,37 @@ struct MenuView: View {
                   Button { app.openArcade(.fishing) } label: { buttonText(L("Рыбалка")) }
                       .buttonStyle(AtlasPrimaryButton(fill: Atlas.sky))
               })
+    }
+
+    /// The 30-day plan in one row: today's day and its minutes, or that today is done; opens the plan.
+    private var planBanner: some View {
+        let today = app.planToday
+        let day = app.planDayShown
+        let line: String = app.planComplete ? L("Все 30 дней пройдены")
+            : today.doneToday ? L("Сегодня готово. Завтра день {0}", min(DailyPlan.length, today.number + 1))
+            : day.isControl ? L("День {0} из 30 · около {1} мин · замер недели", day.number, day.minutes)
+            : L("День {0} из 30 · около {1} мин", day.number, day.minutes)
+        return Button { app.openPlan() } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.badge.checkmark")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Atlas.ink)
+                Text(L("План на 30 дней")).font(.system(size: 17, weight: .heavy, design: .rounded))
+                Text(line).font(Atlas.caption.weight(.semibold)).foregroundStyle(Atlas.inkSoft).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(today.doneToday ? L("Открыть") : L("Тренировка дня"))
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(InkSlab(shape: Slant(), fill: today.doneToday ? Atlas.paper : Atlas.emerald, depth: 3))
+            }
+            .foregroundStyle(Atlas.ink)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .atlasChip()
+        }
+        .buttonStyle(.plain)
+        .kineticEntrance(order: 0)
     }
 
     private var pursuitPlate: some View {

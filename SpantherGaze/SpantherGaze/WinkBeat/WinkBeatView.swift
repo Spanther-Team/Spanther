@@ -12,7 +12,11 @@ struct WinkBeatView: View {
             ZStack {
                 switch session.phase {
                 case .select:
-                    WinkBeatSelect(session: session, size: geo.size)
+                    if session.planned {
+                        Color.clear.onAppear { session.prepare(screen: geo.size) }
+                    } else {
+                        WinkBeatSelect(session: session, size: geo.size)
+                    }
                 case .ready, .playing:
                     WinkBeatPlayScreen(session: session, size: geo.size)
                 case .done:
