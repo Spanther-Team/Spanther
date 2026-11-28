@@ -170,6 +170,12 @@ private struct HUDView: View {
                                               removal: .offset(x: 420).combined(with: .opacity)))
                     .allowsHitTesting(false)
             }
+            if let d = hud.levelDone, !paused {
+                LevelDoneCard(done: d, reduceMotion: reduceMotion)
+                    .id(d.serial)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
             if hud.lookBack && !paused {
                 Text(L("Посмотри на экран")).font(Atlas.display(26)).foregroundStyle(Atlas.ink)
                     .atlasPlate(padding: 16, accent: Atlas.sky)
@@ -196,6 +202,7 @@ private struct HUDView: View {
             }
         }
         .animation(reduceMotion ? nil : Atlas.snap, value: hud.banner)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : Atlas.snap, value: hud.levelDone)
     }
 
     private func pill<C: View>(@ViewBuilder _ c: () -> C) -> some View {
@@ -288,5 +295,56 @@ private struct ReloadHint: View {
         .padding(.horizontal, 20).padding(.vertical, 12)
         .atlasPlate(padding: 0, accent: Atlas.energy)
         .allowsHitTesting(false)
+    }
+}
+
+/// A won level's card (Aziz, 2026-11-28): «Уровень N пройден!», its stars popping in one by one, the share burnt and
+/// the next level. Fireworks, chimes and taps come from the scene's `StreakFX` at the same moment.
+private struct LevelDoneCard: View {
+    let done: LevelDone
+    let reduceMotion: Bool
+    @State private var shown = 0
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(L("Уровень {0} пройден!", done.level))
+                .font(Atlas.display(30))
+                .foregroundStyle(Atlas.ink)
+            HStack(spacing: 10) {
+                ForEach(0..<3, id: \.self) { i in
+                    Image(systemName: i < done.stars ? "star.fill" : "star")
+                        .font(.system(size: 40, weight: .black))
+                        .foregroundStyle(i < done.stars ? Atlas.gold : Atlas.inkSoft.opacity(0.5))
+                        .shadow(color: Atlas.ink.opacity(i < done.stars ? 1 : 0), radius: 0, x: 2, y: 2)
+                        .scaleEffect(i < shown ? 1 : 0.2)
+                        .opacity(i < shown ? 1 : 0)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L("Звёзд: {0}", done.stars))
+            Text(String(format: L("Сбито %.0f%%"), done.ratio * 100))
+                .font(.system(size: 17, weight: .heavy, design: .rounded))
+                .foregroundStyle(Atlas.inkSoft)
+            if done.next > done.level {
+                Text(L("Дальше: уровень {0}", done.next))
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Atlas.ink)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(InkSlab(shape: Slant(lean: 8), fill: Atlas.gold, depth: 3))
+            }
+        }
+        .padding(.horizontal, 30)
+        .padding(.vertical, 20)
+        .atlasPlate(padding: 0, accent: Atlas.gold)
+        .rotationEffect(.degrees(reduceMotion ? 0 : -2))
+        .onAppear {
+            for i in 0..<3 {
+                let delay = reduceMotion ? 0 : 0.35 + 0.28 * Double(i)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.5)) { shown = i + 1 }
+                }
+            }
+        }
     }
 }

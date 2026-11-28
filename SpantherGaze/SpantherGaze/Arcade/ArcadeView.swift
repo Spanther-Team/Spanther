@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The blink arcades' screen. The 3D toon stage fills it; over the stage: the level choice, a 3-2-1, the play's HUD
-/// (time, score, the combo or the catch, rising stamps, the mark over a biting fish, the reel ring round a hooked
-/// one) and the results. In finger play the finger aims and lifting it is the blink.
+/// The arcades' screen. The 3D toon stage fills it; over the stage: the level choice, a 3-2-1, the play's HUD
+/// (time, score, the combo or the catch, rising stamps, the hold's ring round the looked-at fish), the pause plate
+/// and the results. In finger play the finger aims, and lifting it is the blink of «Кроты».
 struct ArcadeView: View {
     @EnvironmentObject var app: AppModel
     @ObservedObject var session: ArcadeSession
@@ -24,13 +24,14 @@ struct ArcadeView: View {
                 case .levels:
                     ArcadeLevels(session: session)
                 case .countdown:
-                    hud
-                    ArcadeCountdown(session: session)
+                    hudForGame
+                    if !session.paused { ArcadeCountdown(session: session) }
                 case .playing:
-                    hud
+                    hudForGame
                 case .done:
                     if let o = session.outcome { ArcadeResults(session: session, outcome: o) }
                 }
+                if session.paused { ArcadePausePlate(session: session) }
             }
             .onAppear { session.layout(screen: Vec2(Double(geo.size.width), Double(geo.size.height))) }
             .onChange(of: geo.size) { _, s in session.layout(screen: Vec2(Double(s.width), Double(s.height))) }
@@ -39,44 +40,105 @@ struct ArcadeView: View {
         .onDisappear { session.leave() }
     }
 
-    /// Stamps, the bite mark and the reel ring, at their screen points (the stage's own space).
+    /// Stamps and the hold's ring, at their screen points (the stage's own space).
     private var marks: some View {
         ZStack {
             ForEach(session.stamps) { s in
                 ArcadeStampView(stamp: s, still: reduceMotion)
             }
-            if let b = session.hud.biteSpot {
-                BiteMark()
-                    .position(x: b.x, y: b.y - 46)
-                    .allowsHitTesting(false)
-            }
-            if let r = session.hud.reel, let at = session.hud.reelSpot {
+            if let r = session.hud.reel, let at = session.hud.reelSpot, !session.paused {
+                // A glowing ring that fills as the eyes hold the fish (his reference picture, 2026-11-28).
+                let d = CGFloat(max(56, session.hud.reelRadius * 2))
                 ZStack {
-                    Circle().stroke(Atlas.ink.opacity(0.35), lineWidth: 9)
+                    Circle().stroke(Color.white.opacity(0.35), lineWidth: 5)
                     Circle()
                         .trim(from: 0, to: CGFloat(max(0.02, r)))
-                        .stroke(Atlas.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                         .rotationEffect(.degrees(-90))
+                        .shadow(color: Color(red: 0.55, green: 0.9, blue: 1), radius: 6)
                 }
-                .frame(width: 78, height: 78)
+                .frame(width: d, height: d)
                 .position(x: at.x, y: at.y)
                 .allowsHitTesting(false)
             }
         }
     }
 
+    @ViewBuilder private var hudForGame: some View {
+        if session.game == .fishing { fishingHud } else { hud }
+    }
+
+    /// «Рыбалка»'s top row, after his reference picture: the catch on the left (fish and «3 / 10»), the clock in the
+    /// middle, a round pause button on the right, all on dark-blue glass over the water.
+    private var fishingHud: some View {
+        VStack {
+            ZStack {
+                HStack {
+                    HStack(spacing: 10) {
+                        Image(systemName: "fish.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Atlas.energy)
+                        Text("\(session.hud.landed) / \(session.hud.goal)")
+                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 46)
+                    .background(Capsule().fill(Self.glass))
+                    .scaleEffect(catchPulse ? 1.18 : 1)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(L("Поймано: {0} из {1}", session.hud.landed, session.hud.goal))
+                    Spacer()
+                    Button { session.setPaused(true) } label: {
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(.white)
+                            .frame(width: 46, height: 46)
+                            .background(Circle().fill(Self.glass))
+                    }
+                    .accessibilityLabel(L("Пауза"))
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "stopwatch")
+                        .font(.system(size: 20, weight: .bold))
+                    Text(Self.clock(session.hud.secondsLeft, padMinutes: true))
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(session.hud.secondsLeft <= 10 ? Color(red: 1, green: 0.55, blue: 0.5) : .white)
+                .padding(.horizontal, 18)
+                .frame(height: 46)
+                .background(Capsule().fill(Self.glass))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 48)
+        .padding(.top, 12)
+        .onChange(of: session.hud.landed) { old, new in
+            guard new > old, !reduceMotion else { return }
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.45)) { catchPulse = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { catchPulse = false }
+            }
+        }
+    }
+
+    @State private var catchPulse = false
+    static let glass = Color(red: 0.09, green: 0.2, blue: 0.38).opacity(0.78)
+
     /// The top bar: leave, the game and level, the clock, the combo or the catch, the score.
     private var hud: some View {
         VStack {
             HStack(alignment: .top, spacing: 10) {
-                Button { session.toLevels() } label: {
-                    Image(systemName: "xmark")
+                Button { session.setPaused(true) } label: {
+                    Image(systemName: "pause.fill")
                         .font(.system(size: 16, weight: .heavy))
                         .foregroundStyle(Atlas.ink)
                         .frame(width: 40, height: 36)
                         .background(InkSlab(shape: Slant(lean: 6), fill: Atlas.paper, depth: 3))
                 }
-                .accessibilityLabel(L("К уровням"))
+                .accessibilityLabel(L("Пауза"))
                 Text(L("{0} · уровень {1}", session.game.title, session.level))
                     .font(.system(size: 15, weight: .heavy, design: .rounded))
                     .foregroundStyle(Atlas.ink)
@@ -101,16 +163,6 @@ struct ArcadeView: View {
                             .background(InkSlab(shape: Slant(lean: 8), fill: Atlas.energy, depth: 3))
                             .transition(.scale.combined(with: .opacity))
                     }
-                } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "fish.fill").font(.system(size: 15, weight: .bold))
-                        Text("\(session.hud.landed)/\(session.hud.goal)").font(Atlas.metric(17, weight: .heavy))
-                    }
-                    .foregroundStyle(Atlas.ink)
-                    .padding(.horizontal, 12)
-                    .frame(height: 36)
-                    .background(InkSlab(shape: Slant(lean: 8), fill: Atlas.sky, depth: 3))
-                    .accessibilityLabel(L("Поймано: {0} из {1}", session.hud.landed, session.hud.goal))
                 }
                 Text("\(session.hud.score)")
                     .font(Atlas.metric(22, weight: .heavy))
@@ -128,7 +180,9 @@ struct ArcadeView: View {
         .padding(.top, 12)
     }
 
-    static func clock(_ s: Int) -> String { String(format: "%d:%02d", max(0, s) / 60, max(0, s) % 60) }
+    static func clock(_ s: Int, padMinutes: Bool = false) -> String {
+        String(format: padMinutes ? "%02d:%02d" : "%d:%02d", max(0, s) / 60, max(0, s) % 60)
+    }
 }
 
 /// A word or a number rising from where it happened.
@@ -162,24 +216,6 @@ private struct ArcadeStampView: View {
     }
 }
 
-/// «!» over a biting fish: blink now.
-private struct BiteMark: View {
-    @State private var big = false
-
-    var body: some View {
-        Text("!")
-            .font(.system(size: 26, weight: .black, design: .rounded))
-            .foregroundStyle(Atlas.ink)
-            .frame(width: 38, height: 38)
-            .background(InkSlab(shape: Circle(), fill: Atlas.gold, depth: 2))
-            .scaleEffect(big ? 1.15 : 0.9)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) { big = true }
-            }
-            .accessibilityLabel(L("Клюёт! Моргни"))
-    }
-}
-
 /// The level choice over the living scene: how to play, ten levels with their stars, the way back.
 private struct ArcadeLevels: View {
     @EnvironmentObject var app: AppModel
@@ -209,9 +245,12 @@ private struct ArcadeLevels: View {
 
     private var hint: String {
         var s = session.game == .moles
-            ? L("Смотри на нору и моргни, когда из неё вылезет крот. Ёжиков не трогай!")
-            : L("Смотри на рыбу и держи взгляд, пока она не клюнет. Тогда моргни и веди её взглядом к мосткам.")
-        if !session.byEye { s += " " + L("Пальцем: держи палец на цели и отпусти его вместо моргания.") }
+            ? L("Смотри на нору и моргни, когда из неё вылезет крот. Кролика и ёжика не трогай!")
+            : L("Смотри на рыбу и держи взгляд, пока круг не замкнётся: рыба поймана.")
+        if !session.byEye {
+            s += " " + (session.game == .moles ? L("Пальцем: держи палец на цели и отпусти его вместо моргания.")
+                                               : L("Пальцем: держи палец на рыбе."))
+        }
         return s
     }
 
@@ -257,7 +296,7 @@ private struct ArcadeCountdown: View {
                 .background(InkSlab(shape: Circle(), fill: Atlas.gold, depth: 5))
                 .id(session.countdown)
                 .transition(.scale.combined(with: .opacity))
-            Text(session.game == .moles ? L("Моргни, когда крот вылезет") : L("Смотри на рыбу, пока не клюнет"))
+            Text(session.game == .moles ? L("Моргни, когда крот вылезет") : L("Держи взгляд на рыбе"))
                 .font(.system(size: 17, weight: .heavy, design: .rounded))
                 .foregroundStyle(Atlas.ink)
                 .padding(.horizontal, 16)
@@ -316,5 +355,24 @@ private struct ArcadeResults: View {
         .frame(width: 440)
         .atlasPlate(padding: 18, accent: Atlas.gold)
         .kineticEntrance()
+    }
+}
+
+/// The pause: the round's clock stands still until «Продолжить».
+private struct ArcadePausePlate: View {
+    @ObservedObject var session: ArcadeSession
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.25).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text(L("Пауза")).font(Atlas.display(28)).foregroundStyle(Atlas.ink)
+                Button { session.setPaused(false) } label: { Text(L("Продолжить")) }.buttonStyle(AtlasPrimaryButton())
+                Button { session.toLevels() } label: { Text(L("Уровни")) }.buttonStyle(AtlasSecondaryButton())
+            }
+            .frame(maxWidth: 300)
+            .atlasPlate(padding: 22, accent: Atlas.sky)
+            .kineticEntrance()
+        }
     }
 }

@@ -8,6 +8,8 @@ final class MoleGardenTests: XCTestCase {
         let one = MoleLevel.level(1), ten = MoleLevel.level(10)
         XCTAssertEqual(one.maxUp, 1)
         XCTAssertEqual(one.decoyShare, 0)
+        XCTAssertEqual(one.rabbitHops, 1)
+        XCTAssertLessThan(ten.rabbitGapSec ?? 99, one.rabbitGapSec ?? 0)
         XCTAssertEqual(one.upSec, 2.4, accuracy: 1e-9)
         XCTAssertEqual(ten.maxUp, 3)
         XCTAssertEqual(ten.upSec, 0.85, accuracy: 1e-9)
@@ -45,7 +47,7 @@ final class MoleGardenTests: XCTestCase {
         var t = 0.0
         while points.count < 3, t < 30 {
             for e in g.update(time: t, aim: nil) {
-                if case .popped(let p) = e, p.kind != .hedgehog {
+                if case .popped(let p) = e, !p.kind.isDecoy {
                     if case .hit(_, let pts, let reaction)? = g.bonk(onset: t + 0.4, aim: g.holeCenter(p.hole)) {
                         points.append(pts)
                         XCTAssertEqual(reaction, 0.4, accuracy: 1e-9)
@@ -113,12 +115,54 @@ final class MoleGardenTests: XCTestCase {
         // Near the hedgehog but out of its reach: the assist never picks a hedgehog.
         let c = g.holeCenter(h.hole)
         var probe = g
-        if case .hedgehogHit? = probe.bonk(onset: t, aim: c + Vec2(c.x < screen.x / 2 ? -1 : 1, 0) * (1.6 * g.reach)) {
+        if case .decoyHit? = probe.bonk(onset: t, aim: c + Vec2(c.x < screen.x / 2 ? -1 : 1, 0) * (1.6 * g.reach)) {
             XCTFail("the assist bonked a hedgehog")
         }
-        XCTAssertEqual(g.bonk(onset: t, aim: g.holeCenter(h.hole)), .hedgehogHit({ var x = h; x.bonkedAt = t; return x }()))
+        XCTAssertEqual(g.bonk(onset: t, aim: g.holeCenter(h.hole)), .decoyHit({ var x = h; x.bonkedAt = t; return x }()))
         XCTAssertEqual(g.score, 0)
         XCTAssertEqual(g.result(at: t).hedgehogHits, 1)
+    }
+
+    /// Level 1 has a rabbit: it comes on its own clock next to the mole (never in its place), hops on to another
+    /// hole, costs points when bonked and is never picked by the assist.
+    func testRabbitHopsAndMustBeLeftAlone() {
+        var g = MoleGarden(level: 1, screen: screen, startTime: 0, seed: 21)
+        XCTAssertNotNil(g.pace.rabbitGapSec)
+        var t = 0.0, rabbits: [MolePop] = [], sideBySide = false
+        while t < 40 {
+            for e in g.update(time: t, aim: nil) { if case .popped(let p) = e, p.kind == .rabbit { rabbits.append(p) } }
+            let up = g.pops.filter { $0.state(at: t, config: g.config) != .gone }
+            if up.contains(where: { $0.kind == .rabbit }), up.contains(where: { !$0.kind.isDecoy }) { sideBySide = true }
+            t += 1.0 / 60
+        }
+        XCTAssertGreaterThanOrEqual(rabbits.count, 4, "rabbits come and hop")
+        XCTAssertTrue(sideBySide, "the rabbit does not take the mole's turn on level 1")
+        // A hop: a rabbit that comes up as the one before went down, in another hole.
+        let hop = zip(rabbits, rabbits.dropFirst()).first { a, b in
+            abs(b.start - (a.hideAt + g.config.hideSec)) < 0.05 && a.hole != b.hole
+        }
+        XCTAssertNotNil(hop, "a rabbit hops on to another hole")
+
+        var h = MoleGarden(level: 1, screen: screen, startTime: 0, seed: 21)
+        var r: MolePop?
+        t = 0
+        while r == nil, t < 30 {
+            for e in h.update(time: t, aim: nil) { if case .popped(let p) = e, p.kind == .rabbit { r = p } }
+            t += 1.0 / 60
+        }
+        guard let rabbit = r else { return XCTFail("no rabbit") }
+        t += 0.3
+        _ = h.update(time: t, aim: nil)
+        let c = h.holeCenter(rabbit.hole)
+        var probe = h
+        if case .decoyHit? = probe.bonk(onset: t, aim: c + Vec2(c.x < screen.x / 2 ? -1 : 1, 0) * (1.6 * h.reach)) {
+            XCTFail("the assist bonked the rabbit")
+        }
+        guard case .decoyHit(let hit)? = h.bonk(onset: t, aim: c) else { return XCTFail("the rabbit was not hit") }
+        XCTAssertEqual(hit.kind, .rabbit)
+        XCTAssertEqual(h.combo, 0)
+        XCTAssertEqual(h.result(at: t).rabbitHits, 1)
+        XCTAssertEqual(h.result(at: t).hedgehogHits, 0)
     }
 
     func testEscapesAndTheEnd() {
@@ -188,7 +232,7 @@ final class MoleGardenTests: XCTestCase {
             if target == nil, t >= busyUntil,
                let i = noticed.firstIndex(where: { $0.at <= t && g.pop(in: $0.pop.hole, at: t)?.id == $0.pop.id }) {
                 let n = noticed.remove(at: i)
-                let leaveAlone = n.pop.kind == .hedgehog && Double.random(in: 0..<1, using: &rng) < 0.85
+                let leaveAlone = n.pop.kind.isDecoy && Double.random(in: 0..<1, using: &rng) < 0.85
                 if !leaveAlone { target = (n.pop, t + 0.15) }
             }
             if let tg = target {

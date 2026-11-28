@@ -1,10 +1,10 @@
 import Foundation
 
-/// Something that just happened on the pond and plays out for a moment: a fish landed (it leaps to the bucket on
-/// the jetty) or a splash where a fish got away or the line snapped. Screen pt and round time.
+/// Something that just happened on the pond and plays out for a moment: a fish caught (a splash of light and drops
+/// where it was, the fish gone at once into the catch) or a plain splash. Screen pt and round time.
 public struct PondMoment: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
-        case landed(FishKind)
+        case caught(FishKind)
         case splash
     }
     public var kind: Kind
@@ -20,7 +20,7 @@ public struct PondMoment: Equatable, Sendable {
     }
 
     public var duration: Double {
-        if case .landed = kind { return 0.75 }
+        if case .caught = kind { return 0.55 }
         return 0.6
     }
 }
@@ -113,19 +113,10 @@ public struct PondStage: ToonScene {
         self.init(screen: p.screen, pond: p.config.pond, shore: p.config.shore, seed: seed)
     }
 
-    /// Where a fish shows (world) for its screen point, at the depth its state puts it.
+    /// Where a fish shows (world) for its screen point: it rises toward the surface as its hold fills.
     public func place(_ f: Fish, _ p: FishingPond, at time: Double) -> (at: SIMD3<Float>, alpha: Float) {
-        var y = fishY, alpha: Float = 1
-        switch f.state {
-        case .swimming: y += 0.03 * Float(sin(time * 2 + Double(f.id)))
-        case .biting: y = -0.26
-        case .hooked: y = -0.2 + 0.05 * Float(sin(time * 17))
-        case .fleeing(let until):
-            let k = Float(max(0, min(1, (until - time) / p.config.fleeSec)))
-            y = fishY - (1 - k) * 0.55
-            alpha = k
-        }
-        return (camera.ground(f.position, height: y) ?? .zero, alpha)
+        let y = fishY + 0.03 * Float(sin(time * 2 + Double(f.id))) + 0.14 * Float(f.interest)
+        return (camera.ground(f.position, height: y) ?? .zero, 1)
     }
 
     /// The draws of one frame at round time `time`. `over` is scratch space the caller keeps (so no frame
@@ -156,12 +147,7 @@ public struct PondStage: ToonScene {
     private func fish(_ f: Fish, _ p: FishingPond, _ time: Double, _ out: inout [ToonDraw], _ ghosts: inout [ToonDraw]) {
         let (at, alpha) = place(f, p, at: time)
         let size = Float(p.radius(f)) * camera.metresPerPoint(at: f.position, height: at.y)
-        let wiggleRate: Double
-        switch f.state {
-        case .hooked: wiggleRate = 22
-        case .biting: wiggleRate = 14
-        default: wiggleRate = 8
-        }
+        let wiggleRate = 8 + 10 * f.interest
         let yaw = camera.groundHeading(at: f.position, screenHeading: f.heading, height: at.y)
             + 0.12 * Float(sin(time * wiggleRate + Double(f.id)))
         let model = ToonMatrix.translation(at) * ToonMatrix.rotationY(yaw) * ToonMatrix.scale(size)
@@ -174,14 +160,14 @@ public struct PondStage: ToonScene {
         let forward = SIMD3<Float>(cos(yaw), 0, -sin(yaw))
         let mouth = SIMD3<Float>(at.x, Self.surface, at.z) + forward * size * 1.05
         if p.lockedFish == f.id {
-            let r = size * (1.45 + 0.05 * Float(sin(time * 7)))
+            // The hold's ring on the water, a little wider as it fills (the HUD draws the progress arc over it).
+            let r = size * (1.45 + 0.12 * Float(f.interest) + 0.04 * Float(sin(time * 7)))
             ghosts.append(ToonDraw(mesh: Mesh.ring.rawValue,
                                    model: ToonMatrix.translation(SIMD3(at.x, Self.surface + 0.02, at.z)) * ToonMatrix.scale(SIMD3(r, r, r)),
                                    tint: SIMD4(1, 1, 1, 0.95), style: .ghost, shadow: false))
         }
-        switch f.state {
-        case .swimming where f.interest > 0.05:
-            // Bubbles from the mouth, more of them the closer it is to biting.
+        if f.interest > 0.05 {
+            // Bubbles from the mouth, more of them as the hold fills.
             let n = 1 + Int(f.interest * 3)
             for i in 0..<n {
                 let ph = (time * 1.6 + Double(i) / Double(n)).truncatingRemainder(dividingBy: 1)
@@ -191,35 +177,6 @@ public struct PondStage: ToonScene {
                                         * ToonMatrix.scale(SIMD3(r, r, r)),
                                        tint: SIMD4(1, 1, 1, Float(0.85 * (1 - ph))), style: .ghost, shadow: false))
             }
-        case .biting(let since, _):
-            // The float bobs and dips under; rings spread from it.
-            let t = time - since
-            let dip = Float(0.5 + 0.5 * sin(t * 15)) * 0.22
-            let b = size * 0.26
-            out.append(ToonDraw(mesh: Mesh.bobber.rawValue,
-                                model: ToonMatrix.translation(mouth + SIMD3(0, 0.05 - dip * b * 2, 0)) * ToonMatrix.scale(b),
-                                outline: 1.2))
-            line(from: rodTip, to: mouth + SIMD3(0, b * 0.9, 0), &out)
-            for k in 0..<2 {
-                let ph = (t * 2.2 + Double(k) * 0.5).truncatingRemainder(dividingBy: 1)
-                let r = size * Float(0.3 + 0.9 * ph)
-                ghosts.append(ToonDraw(mesh: Mesh.bubble.rawValue,
-                                       model: ToonMatrix.translation(mouth + SIMD3(0, 0.02, 0)) * ToonMatrix.scale(SIMD3(r, r * 0.3, r)),
-                                       tint: SIMD4(1, 1, 1, Float(0.8 * (1 - ph))), style: .ghost, shadow: false))
-            }
-        case .hooked:
-            line(from: rodTip, to: mouth + SIMD3(0, 0.03, 0), &out)
-            for k in 0..<4 {
-                let ph = (time * 2.8 + Double(k) * 0.25).truncatingRemainder(dividingBy: 1)
-                let ang = Float(k) * 1.57 + Float(time * 3)
-                let d = SIMD3<Float>(cos(ang), 0, sin(ang)) * size * Float(0.5 + 0.6 * ph)
-                let lift = Float(4 * ph * (1 - ph)) * size * 0.8
-                ghosts.append(ToonDraw(mesh: Mesh.droplet.rawValue,
-                                       model: ToonMatrix.translation(SIMD3(at.x, Self.surface + lift, at.z) + d) * ToonMatrix.scale(size * 0.09),
-                                       tint: SIMD4(1, 1, 1, Float(0.9 * (1 - ph))), style: .ghost, shadow: false))
-            }
-        default:
-            break
         }
     }
 
@@ -230,18 +187,14 @@ public struct PondStage: ToonScene {
         let from = camera.ground(mo.spot, height: Self.surface) ?? .zero
         let size = Float(0.075 * screen.y) * camera.metresPerPoint(at: mo.spot, height: Self.surface)
         switch mo.kind {
-        case .landed(let kind):
-            // A leap from the water into the bucket.
-            let to = bucket + SIMD3(0, 0.3, 0)
-            var at = from + (to - from) * k
-            at.y += 4 * k * (1 - k) * 2.2
-            let spin = k * 4
-            let r = Float(FishSpecies.of(kind).radius * screen.y) * camera.metresPerPoint(at: mo.spot) * (1 - 0.35 * k)
-            out.append(ToonDraw(mesh: fishMesh(kind).rawValue,
-                                model: ToonMatrix.translation(at) * ToonMatrix.rotationY(Float(-mo.heading))
-                                    * ToonMatrix.rotationZ(spin) * ToonMatrix.scale(r),
-                                outline: Self.outline))
-            if k < 0.5 { splash(at: from, size: size, k: k * 2, &ghosts) }
+        case .caught(let kind):
+            // No leap and no line: drops and a widening ring of light where it was, sized to the fish.
+            let r = Float(FishSpecies.of(kind).radius / 0.075)
+            splash(at: from, size: size * r, k: k, &ghosts)
+            let ring = size * r * (1.2 + 2.2 * k)
+            ghosts.append(ToonDraw(mesh: Mesh.ring.rawValue,
+                                   model: ToonMatrix.translation(from + SIMD3(0, 0.03, 0)) * ToonMatrix.scale(SIMD3(ring, ring, ring)),
+                                   tint: SIMD4(1, 0.95, 0.75, 0.95 * (1 - k)), style: .ghost, shadow: false))
         case .splash:
             splash(at: from, size: size, k: k, &ghosts)
         }
@@ -260,14 +213,6 @@ public struct PondStage: ToonScene {
         ghosts.append(ToonDraw(mesh: Mesh.bubble.rawValue,
                                model: ToonMatrix.translation(c + SIMD3(0, 0.02, 0)) * ToonMatrix.scale(SIMD3(r, r * 0.25, r)),
                                tint: SIMD4(1, 1, 1, 0.8 * (1 - k)), style: .ghost, shadow: false))
-    }
-
-    private func line(from a: SIMD3<Float>, to b: SIMD3<Float>, _ out: inout [ToonDraw]) {
-        // A little sag in the middle: two straight pieces.
-        var mid = (a + b) / 2
-        mid.y -= 0.25
-        out.append(ToonDraw(mesh: Mesh.line.rawValue, model: .rod(from: a, to: mid, radius: 0.018), style: .flat, shadow: false))
-        out.append(ToonDraw(mesh: Mesh.line.rawValue, model: .rod(from: mid, to: b, radius: 0.018), style: .flat, shadow: false))
     }
 
     // MARK: Meshes
