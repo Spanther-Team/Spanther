@@ -333,6 +333,9 @@ struct ToonStageView: UIViewRepresentable {
         v.colorPixelFormat = .bgra8Unorm_srgb
         v.depthStencilPixelFormat = .invalid
         v.sampleCount = 1
+        // Two pixels per point, also on 3x screens: with 4x MSAA the edges stay smooth, and an iPhone 13 draws 44%
+        // of the pixels. In Aziz's session of 2026-11-28 the pond took up to 13.6 ms of GPU a frame at 3x.
+        v.contentScaleFactor = 2
         v.framebufferOnly = true
         v.isOpaque = true
         v.backgroundColor = UIColor(red: 0.81, green: 0.9, blue: 0.97, alpha: 1)

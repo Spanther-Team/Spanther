@@ -591,7 +591,12 @@ final class AppModel: ObservableObject {
             config.followPitch = 0
             config.followYaw = 0
         }
-        adapter = m == nil ? nil : grip.reference.map { GazeAdapter(reference: $0, distanceM: grip.distanceM, config: config) }
+        // The side terms measure the aim from the screen's centre, so an aim that swings wider than at the
+        // calibration is corrected on the left and the right apart.
+        let center = windowSize.map { Vec2($0.x / 2, $0.y / 2) }
+        adapter = m == nil ? nil : grip.reference.map {
+            GazeAdapter(reference: $0, distanceM: grip.distanceM, config: config, center: center)
+        }
     }
 
     /// Starts the aim filters and the looking-away gate afresh.
@@ -753,7 +758,7 @@ final class AppModel: ObservableObject {
                             p.taught += 1
                         }
                     }
-                    aimCorrection = adaptAim ? (adapter?.correction(pose: pose) ?? .zero) : .zero
+                    aimCorrection = adaptAim ? (adapter?.correction(raw: raw, pose: pose) ?? .zero) : .zero
                     gaze = .point(filter.filter(raw + aimCorrection, t: s.timestamp))
                     probeGaze = probeFilter.filter(raw, t: s.timestamp)
                 }
@@ -1209,7 +1214,7 @@ final class AppModel: ObservableObject {
         let pose = HeadPose(pitch: Self.median(frames.map { $0.pose.pitch }), yaw: Self.median(frames.map { $0.pose.yaw }))
         let ok = adapter?.learn(raw: raw, target: target, pose: pose, time: host) ?? false
         logger.label(time: host, source: source, target: target, raw: raw, pitch: pose.pitch, yaw: pose.yaw,
-                     accepted: ok, correction: adapter?.correction(pose: pose) ?? .zero)
+                     accepted: ok, correction: adapter?.correction(raw: raw, pose: pose) ?? .zero)
         // How far the calibration's own aim was from where the player looked: the calibration's health.
         health?.label(missCm: raw.distance(to: target) / ptPerCm)
         checkHealth()

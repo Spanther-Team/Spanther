@@ -73,6 +73,26 @@ final class MoleGardenTests: XCTestCase {
         XCTAssertEqual(g.result(at: t + 1).whiffs, 2)
     }
 
+    /// A blink that misses every reach still bonks the mole up nearby (G2OM-style picking), but not one too far.
+    func testAssistReachBonksTheNearbyMole() {
+        var g = MoleGarden(level: 1, screen: screen, startTime: 0, seed: 1)
+        let (p, t) = firstPop(&g)
+        let c = g.holeCenter(p.hole)
+        let out = Vec2(c.x < screen.x / 2 ? -1 : 1, 0)
+        let aim = c + out * (2 * g.reach)
+        XCTAssertNil(g.nearestHole(to: aim))
+        guard case .hit(let q, _, _)? = g.bonk(onset: t + 0.3, aim: aim) else { return XCTFail("the assist should bonk it") }
+        XCTAssertEqual(q.hole, p.hole)
+        XCTAssertTrue(g.lastAssisted)
+
+        var h = MoleGarden(level: 1, screen: screen, startTime: 0, seed: 1)
+        let (p2, t2) = firstPop(&h)
+        let c2 = h.holeCenter(p2.hole)
+        let far = c2 + Vec2(c2.x < screen.x / 2 ? -1 : 1, 0) * (2.6 * h.reach)
+        XCTAssertEqual(h.bonk(onset: t2 + 0.3, aim: far), .whiff(hole: nil))
+        XCTAssertFalse(h.lastAssisted)
+    }
+
     func testLateGrace() {
         var g = MoleGarden(level: 1, screen: screen, startTime: 0, seed: 3)
         let (p, _) = firstPop(&g)
@@ -90,6 +110,12 @@ final class MoleGardenTests: XCTestCase {
             t += 1.0 / 60
         }
         guard let h = hedgehog else { return XCTFail("no hedgehog in a minute of level 9") }
+        // Near the hedgehog but out of its reach: the assist never picks a hedgehog.
+        let c = g.holeCenter(h.hole)
+        var probe = g
+        if case .hedgehogHit? = probe.bonk(onset: t, aim: c + Vec2(c.x < screen.x / 2 ? -1 : 1, 0) * (1.6 * g.reach)) {
+            XCTFail("the assist bonked a hedgehog")
+        }
         XCTAssertEqual(g.bonk(onset: t, aim: g.holeCenter(h.hole)), .hedgehogHit({ var x = h; x.bonkedAt = t; return x }()))
         XCTAssertEqual(g.score, 0)
         XCTAssertEqual(g.result(at: t).hedgehogHits, 1)

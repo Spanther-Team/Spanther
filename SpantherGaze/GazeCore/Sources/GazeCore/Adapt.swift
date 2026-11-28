@@ -42,6 +42,13 @@ public struct GazeAdapterConfig: Equatable, Sendable {
     public var gatePt = 180.0
     /// The correction never moves the aim further than this.
     public var maxCorrectionPt = 300.0
+    /// Prior spread of the side terms (a share: correction pt per pt of the aim from the screen's centre), when
+    /// the adapter knows the screen's centre. In Aziz's session of 2026-11-28 the head-frame model drew the moles'
+    /// holes on the left 20 to 60 pt too far left and those on the right 10 to 90 pt too far right: ARKit's eye
+    /// angles swung about 1.2 times wider than at the calibration. A plain bias learned from the right-hand hits
+    /// then pushed the left side further off. Replayed on that session with the arcades' near-miss labels, the side
+    /// terms at 0.2 took the miss on the moles from 64 to 54 pt.
+    public var priorGain = 0.2
     public init() {}
 }
 
@@ -52,8 +59,9 @@ public struct GazeAdapterConfig: Equatable, Sendable {
 /// camera. This adds a small correction on top of the model's prediction (screen pt), learned from moments when the
 /// game knows where the player is looking: a rhythm note winked on the beat, a meteor being burned, the check dots.
 ///
-/// correction = b + B · (pose - calibration pose), for each screen axis. `b` absorbs a slow drift, `B` how the aim
-/// moves with tilt, so a new tilt is corrected before the next label arrives. It is a ridge regression on the
+/// correction = b + B · (pose - calibration pose) + g · (aim - screen centre), for each screen axis. `b` absorbs a
+/// slow drift, `B` how the aim moves with tilt, so a new tilt is corrected before the next label arrives, and `g` an aim
+/// that swings wider or narrower than at the calibration, so the left and the right side are corrected apart. It is a ridge regression on the
 /// residuals with exponential forgetting: each fit uses all labels so far, weighted by age, plus a prior that keeps
 /// `b` at zero and `B` at the measured follow (see `followPitch`) until there is evidence. Labels seldom arrive at
 /// different tilts (players hold still while they aim), so `B` mostly comes from that prior.
@@ -61,44 +69,68 @@ public struct GazeAdapter: Sendable {
     public let config: GazeAdapterConfig
     /// The calibration's mean head pose.
     public let reference: HeadPose
-    /// Weighted sums: S = Σ w·φφᵀ (3x3, row-major), sx = Σ w·φ·rx, sy = Σ w·φ·ry, with φ = (1, Δpitch, Δyaw).
-    private var S = [Double](repeating: 0, count: 9)
-    private var sx = [0.0, 0.0, 0.0], sy = [0.0, 0.0, 0.0]
-    /// Fitted terms (b, B_pitch, B_yaw) for screen x and y.
+    /// The screen's centre (pt), from which the side terms measure the aim; nil: no side terms.
+    public let center: Vec2?
+    /// Per screen axis, weighted sums S = Σ w·φφᵀ (row-major) and s = Σ w·φ·r, with φ = (1, Δpitch, Δyaw) and,
+    /// with a centre, the aim's offset from it along that axis.
+    private var S: [[Double]]
+    private var s: [[Double]]
+    /// Fitted terms (b, B_pitch, B_yaw[, gain]) for screen x and y.
     public private(set) var wx: [Double], wy: [Double]
-    /// The prior's values of those terms: no bias, and the aim's measured follow of the head turned against it.
+    /// The prior's values of those terms: no bias, the aim's measured follow of the head turned against it, no gain.
     public let priorX: [Double], priorY: [Double]
+    private let lambda: [Double]
     private var lastLabelTime: Double?
     /// Labels learned and labels rejected by the gate.
     public private(set) var learned = 0
     public private(set) var rejected = 0
 
     /// `distanceM`: the calibration's mean distance from the camera to the face (metres), which sets how far a
-    /// head turn moves the aim.
-    public init(reference: HeadPose, distanceM: Double = 0.28, config: GazeAdapterConfig = GazeAdapterConfig()) {
+    /// head turn moves the aim. `center`: the screen's centre (pt) for the side terms; nil leaves them out.
+    public init(reference: HeadPose, distanceM: Double = 0.28, config: GazeAdapterConfig = GazeAdapterConfig(),
+                center: Vec2? = nil) {
         self.reference = reference
         self.config = config
+        let sides = center != nil && config.priorGain > 0
+        self.center = sides ? center : nil
         // The aim follows the head: pitch turns it along screen y, yaw along screen x, so the correction pushes back.
         let k = max(0.1, min(distanceM, 0.6)) * config.ptPerMetre
-        priorX = [0, 0, -config.followYaw * k]
-        priorY = [0, -config.followPitch * k, 0]
+        priorX = [0, 0, -config.followYaw * k] + (sides ? [0] : [])
+        priorY = [0, -config.followPitch * k, 0] + (sides ? [0] : [])
         wx = priorX
         wy = priorY
+        let n = priorX.count
+        S = [[Double]](repeating: [Double](repeating: 0, count: n * n), count: 2)
+        s = [[Double]](repeating: [Double](repeating: 0, count: n), count: 2)
+        // Ridge prior around (priorX, priorY): label noise over prior spread, squared, on each term.
+        let n2 = config.labelNoisePt * config.labelNoisePt
+        let spreads = [config.priorBiasPt, config.priorSlopePtPerRad, config.priorSlopePtPerRad]
+            + (sides ? [config.priorGain] : [])
+        lambda = spreads.map { n2 / ($0 * $0) }
     }
 
-    private func phi(_ pose: HeadPose) -> [Double] { [1, pose.pitch - reference.pitch, pose.yaw - reference.yaw] }
+    private func phi(_ pose: HeadPose, raw: Vec2?, axis: Int) -> [Double] {
+        var f = [1, pose.pitch - reference.pitch, pose.yaw - reference.yaw]
+        if let c = center {
+            // Without an aim the side term sits at the centre, where it adds nothing.
+            let r = raw ?? c
+            f.append(axis == 0 ? r.x - c.x : r.y - c.y)
+        }
+        return f
+    }
 
-    /// The correction for a frame with this head pose (screen pt), capped at `maxCorrectionPt`.
-    public func correction(pose: HeadPose) -> Vec2 {
-        let f = phi(pose)
-        var c = Vec2(zip(wx, f).map(*).reduce(0, +), zip(wy, f).map(*).reduce(0, +))
+    /// The correction for a frame with this head pose and uncorrected aim (screen pt), capped at
+    /// `maxCorrectionPt`. Without `raw` the side terms count as at the screen's centre.
+    public func correction(raw: Vec2? = nil, pose: HeadPose) -> Vec2 {
+        let fx = phi(pose, raw: raw, axis: 0), fy = phi(pose, raw: raw, axis: 1)
+        var c = Vec2(zip(wx, fx).map(*).reduce(0, +), zip(wy, fy).map(*).reduce(0, +))
         let len = c.length
         if len > config.maxCorrectionPt { c = c * (config.maxCorrectionPt / len) }
         return c
     }
 
     /// The model's prediction with the correction added (screen pt in, screen pt out).
-    public func correct(_ raw: Vec2, pose: HeadPose) -> Vec2 { raw + correction(pose: pose) }
+    public func correct(_ raw: Vec2, pose: HeadPose) -> Vec2 { raw + correction(raw: raw, pose: pose) }
 
     /// Learns from one moment when the player was looking at `target` (screen pt) while the model predicted `raw`
     /// (screen pt, uncorrected). `weight` < 1 for many small labels, such as every frame of a meteor being burned.
@@ -112,41 +144,49 @@ public struct GazeAdapter: Sendable {
         }
         if let last = lastLabelTime, time > last {
             let decay = pow(0.5, (time - last) / config.halfLifeSec)
-            for i in 0..<9 { S[i] *= decay }
-            for i in 0..<3 { sx[i] *= decay; sy[i] *= decay }
+            for a in 0..<2 {
+                for i in S[a].indices { S[a][i] *= decay }
+                for i in s[a].indices { s[a][i] *= decay }
+            }
         }
         lastLabelTime = max(lastLabelTime ?? time, time)
-        let f = phi(pose)
         let r = target - raw
-        for i in 0..<3 {
-            for j in 0..<3 { S[i * 3 + j] += weight * f[i] * f[j] }
-            sx[i] += weight * f[i] * r.x
-            sy[i] += weight * f[i] * r.y
+        let n = lambda.count
+        for a in 0..<2 {
+            let f = phi(pose, raw: raw, axis: a)
+            let ra = a == 0 ? r.x : r.y
+            for i in 0..<n {
+                for j in 0..<n { S[a][i * n + j] += weight * f[i] * f[j] }
+                s[a][i] += weight * f[i] * ra
+            }
+            var A = S[a]
+            for i in 0..<n { A[i * n + i] += lambda[i] }
+            let prior = a == 0 ? priorX : priorY
+            let b = (0..<n).map { s[a][$0] + lambda[$0] * prior[$0] }
+            if let w = Self.solve(A, b) {
+                if a == 0 { wx = w } else { wy = w }
+            }
         }
-        // Ridge prior around (priorX, priorY): label noise over prior spread, squared, on each term.
-        let n2 = config.labelNoisePt * config.labelNoisePt
-        let lambda = [n2 / (config.priorBiasPt * config.priorBiasPt),
-                      n2 / (config.priorSlopePtPerRad * config.priorSlopePtPerRad),
-                      n2 / (config.priorSlopePtPerRad * config.priorSlopePtPerRad)]
-        var A = S
-        for i in 0..<3 { A[i * 4] += lambda[i] }
-        let bx = (0..<3).map { sx[$0] + lambda[$0] * priorX[$0] }, by = (0..<3).map { sy[$0] + lambda[$0] * priorY[$0] }
-        if let x = Self.solve3(A, bx), let y = Self.solve3(A, by) { wx = x; wy = y }
         learned += 1
         return true
     }
 
-    /// Solves the 3x3 system A·x = b (A row-major) by Gaussian elimination with partial pivoting.
-    static func solve3(_ a: [Double], _ b: [Double]) -> [Double]? {
-        var m = [[a[0], a[1], a[2], b[0]], [a[3], a[4], a[5], b[1]], [a[6], a[7], a[8], b[2]]]
-        for c in 0..<3 {
-            guard let p = (c..<3).max(by: { abs(m[$0][c]) < abs(m[$1][c]) }), abs(m[p][c]) > 1e-12 else { return nil }
+    /// Solves the n x n system A·x = b (A row-major) by Gaussian elimination with partial pivoting.
+    static func solve(_ a: [Double], _ b: [Double]) -> [Double]? {
+        let n = b.count
+        guard a.count == n * n else { return nil }
+        var m = (0..<n).map { r in Array(a[(r * n)..<(r * n + n)]) + [b[r]] }
+        for c in 0..<n {
+            guard let p = (c..<n).max(by: { abs(m[$0][c]) < abs(m[$1][c]) }), abs(m[p][c]) > 1e-12 else { return nil }
             m.swapAt(c, p)
-            for r in 0..<3 where r != c {
+            for r in 0..<n where r != c {
                 let k = m[r][c] / m[c][c]
-                for j in c..<4 { m[r][j] -= k * m[c][j] }
+                for j in c...n { m[r][j] -= k * m[c][j] }
             }
         }
-        return (0..<3).map { m[$0][3] / m[$0][$0] }
+        return (0..<n).map { m[$0][n] / m[$0][$0] }
     }
+
+    /// The 3 x 3 case of `solve`.
+    static func solve3(_ a: [Double], _ b: [Double]) -> [Double]? { solve(a, b) }
 }

@@ -394,7 +394,7 @@ final class MoleSession: ArcadeSession {
             swings.append(MoleSwing(spot: c, hole: p.hole, time: t, hit: true))
             stamp("+\(points)", at: c, p.kind == .golden ? .gold : .good)
             onLabel?(c, host)
-            onEvent?("mole_hit", host, c, reaction, g.score)
+            onEvent?(g.lastAssisted ? "mole_hit_assist" : "mole_hit", host, c, reaction, g.score)
         case let .hedgehogHit(p)?:
             let c = g.holeCenter(p.hole)
             swings.append(MoleSwing(spot: c, hole: p.hole, time: t, hit: true))
@@ -509,7 +509,7 @@ final class FishingSession: ArcadeSession {
         if case let .hooked(f, reaction)? = e {
             stamp(L("Есть!"), at: f.position, .good)
             onLabel?(f.position, host)
-            onEvent?("fish_hooked", host, f.position, reaction, p.score)
+            onEvent?(p.lastAssisted ? "fish_hooked_assist" : "fish_hooked", host, f.position, reaction, p.score)
         }
     }
 
